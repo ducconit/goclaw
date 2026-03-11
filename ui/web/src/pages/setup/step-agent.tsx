@@ -30,7 +30,7 @@ export function StepAgent({ provider, model, onBack, onComplete }: StepAgentProp
   const { t } = useTranslation("setup");
   const { createAgent, deleteAgent, resummonAgent } = useAgents();
 
-  const [displayName] = useState("GoClaw");
+  const [displayName, setDisplayName] = useState("GoClaw");
   const [agentKey, setAgentKey] = useState("goclaw");
   const [keyTouched, setKeyTouched] = useState(false);
   const [description, setDescription] = useState(DEFAULT_PROMPT);
@@ -159,8 +159,8 @@ export function StepAgent({ provider, model, onBack, onComplete }: StepAgentProp
                 </Label>
                 <Input
                   value={displayName}
-                  readOnly
-                  className="bg-muted cursor-default"
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder={t("agent.displayNamePlaceholder", "e.g. GoClaw")}
                 />
               </div>
               <div className="space-y-2">

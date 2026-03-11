@@ -48,6 +48,7 @@ RUN set -eux; \
     fi; \
     if [ "$ENABLE_PYTHON" = "true" ]; then \
         apk add --no-cache python3 py3-pip; \
+        pip3 install --break-system-packages pypdf; \
     fi; \
     if [ "$ENABLE_NODE" = "true" ]; then \
         apk add --no-cache nodejs npm; \

@@ -291,6 +291,23 @@ func runGateway() {
 		initOTelExporter(context.Background(), cfg, traceCollector)
 	}
 
+	// Start snapshot worker for hourly usage aggregation
+	if pgStores.Snapshots != nil {
+		snapshotWorker := tracing.NewSnapshotWorker(pgStores.DB, pgStores.Snapshots)
+		snapshotWorker.Start()
+		defer snapshotWorker.Stop()
+
+		// Backfill historical data in background
+		go func() {
+			count, err := snapshotWorker.Backfill(context.Background())
+			if err != nil {
+				slog.Warn("snapshot backfill failed", "error", err)
+			} else if count > 0 {
+				slog.Info("snapshot backfill complete", "hours", count)
+			}
+		}()
+	}
+
 	// Redis cache: compiled via build tags. Build with 'go build -tags redis' to enable.
 	redisClient := initRedisClient(cfg)
 	defer shutdownRedis(redisClient)
@@ -321,9 +338,18 @@ func runGateway() {
 	}
 
 	// Wire embedding provider to PGMemoryStore so IndexDocument generates vectors.
+	// Per-agent DB config takes priority over config file defaults.
 	if pgStores.Memory != nil {
 		memCfg := cfg.Agents.Defaults.Memory
-		if embProvider := resolveEmbeddingProvider(cfg, memCfg); embProvider != nil {
+		if pgStores.Agents != nil {
+			if defaultAgent, agErr := pgStores.Agents.GetByKey(context.Background(), "default"); agErr == nil {
+				if agentMemCfg := defaultAgent.ParseMemoryConfig(); agentMemCfg != nil {
+					memCfg = agentMemCfg
+					slog.Debug("using per-agent memory config from DB", "agent", defaultAgent.AgentKey)
+				}
+			}
+		}
+		if embProvider := resolveEmbeddingProvider(cfg, memCfg, providerRegistry); embProvider != nil {
 			pgStores.Memory.SetEmbeddingProvider(embProvider)
 			slog.Info("memory embeddings enabled", "provider", embProvider.Name(), "model", embProvider.Model())
 
@@ -478,7 +504,7 @@ func runGateway() {
 		}
 		if pgSkills, ok := pgStores.Skills.(*pg.PGSkillStore); ok {
 			memCfg := cfg.Agents.Defaults.Memory
-			if embProvider := resolveEmbeddingProvider(cfg, memCfg); embProvider != nil {
+			if embProvider := resolveEmbeddingProvider(cfg, memCfg, providerRegistry); embProvider != nil {
 				pgSkills.SetEmbeddingProvider(embProvider)
 				skillSearchTool.SetEmbeddingSearcher(pgSkills, embProvider)
 				slog.Info("skill embeddings enabled", "provider", embProvider.Name())
@@ -509,6 +535,28 @@ func runGateway() {
 	// Message tool (send to channels)
 	toolsReg.Register(tools.NewMessageTool())
 	slog.Info("session + message tools registered")
+
+	// Register legacy tool aliases (backward-compat names from policy.go).
+	for alias, canonical := range tools.LegacyToolAliases() {
+		toolsReg.RegisterAlias(alias, canonical)
+	}
+
+	// Register Claude Code tool aliases so Claude Code skills work without modification.
+	// LLM calls alias name → registry resolves to canonical tool → executes.
+	for alias, canonical := range map[string]string{
+		"Read":       "read_file",
+		"Write":      "write_file",
+		"Edit":       "edit",
+		"Bash":       "exec",
+		"WebFetch":   "web_fetch",
+		"WebSearch":  "web_search",
+		"Agent":      "spawn",
+		"Skill":      "use_skill",
+		"ToolSearch": "mcp_tool_search",
+	} {
+		toolsReg.RegisterAlias(alias, canonical)
+	}
+	slog.Info("tool aliases registered", "count", len(toolsReg.Aliases()))
 
 	// Allow read_file to access skills directories and CLI workspaces (outside workspace).
 	// Skills can live in ~/.goclaw/skills/, ~/.agents/skills/, ~/.goclaw/skills-store/, etc.
@@ -603,6 +651,9 @@ func runGateway() {
 	if tracesH != nil {
 		server.SetTracesHandler(tracesH)
 	}
+	// External wake/trigger API
+	wakeH := httpapi.NewWakeHandler(agentRouter, cfg.Gateway.Token)
+	server.SetWakeHandler(wakeH)
 	if mcpH != nil {
 		server.SetMCPHandler(mcpH)
 	}
@@ -628,6 +679,16 @@ func runGateway() {
 			pendingMessagesH.SetProviderModel(pc.Provider, pc.Model)
 		}
 		server.SetPendingMessagesHandler(pendingMessagesH)
+	}
+
+	// Activity audit log API
+	if pgStores.Activity != nil {
+		server.SetActivityHandler(httpapi.NewActivityHandler(pgStores.Activity, cfg.Gateway.Token))
+	}
+
+	// Usage analytics API
+	if pgStores.Snapshots != nil {
+		server.SetUsageHandler(httpapi.NewUsageHandler(pgStores.Snapshots, pgStores.DB, cfg.Gateway.Token))
 	}
 
 	// Memory management API (wired directly, only needs MemoryStore + token)
