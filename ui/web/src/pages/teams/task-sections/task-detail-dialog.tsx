@@ -36,7 +36,6 @@ export function TaskDetailDialog({
   getTaskDetail, approveTask, rejectTask, addTaskComment, assignTask,
 }: TaskDetailDialogProps) {
   const { t } = useTranslation("teams");
-
   const [comments, setComments] = useState<TeamTaskComment[]>([]);
   const [events, setEvents] = useState<TeamTaskEvent[]>([]);
   const [attachments, setAttachments] = useState<TeamTaskAttachment[]>([]);

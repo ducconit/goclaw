@@ -3,6 +3,7 @@ package methods
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
@@ -113,6 +114,7 @@ func (m *PairingMethods) handleApprove(ctx context.Context, client *gateway.Clie
 		m.broadcaster(*protocol.NewEvent(protocol.EventDevicePairRes, map[string]any{"action": "approved"}))
 	}
 
+	emitAudit(m.msgBus, client, "pairing.approved", "pairing", params.Code)
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 		"paired": paired,
 	}))
@@ -141,6 +143,7 @@ func (m *PairingMethods) handleDeny(ctx context.Context, client *gateway.Client,
 		m.broadcaster(*protocol.NewEvent(protocol.EventDevicePairRes, map[string]any{"action": "denied"}))
 	}
 
+	emitAudit(m.msgBus, client, "pairing.denied", "pairing", params.Code)
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 		"denied": true,
 	}))
@@ -191,6 +194,7 @@ func (m *PairingMethods) handleRevoke(ctx context.Context, client *gateway.Clien
 		})
 	}
 
+	emitAudit(m.msgBus, client, "pairing.revoked", "pairing", params.SenderID)
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 		"revoked": true,
 	}))
@@ -212,7 +216,11 @@ func (m *PairingMethods) handleBrowserPairingStatus(ctx context.Context, client 
 		return
 	}
 
-	if m.service.IsPaired(params.SenderID, "browser") {
+	paired, pairErr := m.service.IsPaired(params.SenderID, "browser")
+	if pairErr != nil {
+		slog.Warn("security.pairing_check_failed", "sender_id", params.SenderID, "error", pairErr)
+	}
+	if paired {
 		client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 			"status": "approved",
 		}))

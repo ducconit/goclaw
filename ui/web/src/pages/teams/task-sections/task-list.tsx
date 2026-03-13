@@ -60,6 +60,7 @@ export function TaskList({
           <span>{t("tasks.columns.status")}</span>
           <span>{t("tasks.columns.owner")}</span>
           <span>{t("tasks.columns.priority")}</span>
+          <span className="text-right">{t("tasks.columns.actions")}</span>
         </div>
         {tasks.map((task) => (
           <div

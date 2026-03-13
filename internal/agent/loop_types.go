@@ -46,7 +46,8 @@ type Loop struct {
 	contextWindow int
 	maxIterations int
 	maxToolCalls  int
-	workspace     string
+	workspace        string
+	workspaceSharing *store.WorkspaceSharingConfig
 
 	// Per-agent overrides from DB (nil = use global defaults)
 	restrictToWs  *bool
@@ -153,7 +154,8 @@ type LoopConfig struct {
 	ContextWindow   int
 	MaxIterations   int
 	MaxToolCalls    int
-	Workspace       string
+	Workspace        string
+	WorkspaceSharing *store.WorkspaceSharingConfig
 
 	// Per-agent DB overrides (nil = use global defaults)
 	RestrictToWs *bool
@@ -262,6 +264,7 @@ func NewLoop(cfg LoopConfig) *Loop {
 		maxIterations:          cfg.MaxIterations,
 		maxToolCalls:           cfg.MaxToolCalls,
 		workspace:              cfg.Workspace,
+		workspaceSharing:       cfg.WorkspaceSharing,
 		restrictToWs:           cfg.RestrictToWs,
 		subagentsCfg:           cfg.SubagentsCfg,
 		memoryCfg:              cfg.MemoryCfg,
@@ -330,6 +333,11 @@ type RunRequest struct {
 	RunKind       string // "delegation", "announce" — empty for user-initiated runs
 	HideInput     bool   // don't persist input message in session history (announce runs)
 	ContentSuffix string // appended to assistant response before saving (e.g. image markdown for WS)
+
+	// Mid-run message injection channel (nil = disabled).
+	// When set, the loop drains this channel at turn boundaries to inject
+	// user follow-up messages into the running conversation.
+	InjectCh <-chan InjectedMessage
 
 	// Delegation context (set when running as a delegate agent)
 	DelegationID  string // delegation ID for event correlation

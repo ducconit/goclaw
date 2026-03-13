@@ -104,6 +104,7 @@ func builtinToolSeedData() []store.BuiltinToolDef {
 		// skills
 		{Name: "skill_search", DisplayName: "Skill Search", Description: "Search for available skills by keyword or description to find relevant capabilities", Category: "skills", Enabled: true},
 		{Name: "use_skill", DisplayName: "Use Skill", Description: "Activate a skill to use its specialized capabilities (tracing marker)", Category: "skills", Enabled: true},
+		{Name: "publish_skill", DisplayName: "Publish Skill", Description: "Register a skill directory (created via skill-creator) in the system database, making it discoverable and grantable to agents", Category: "skills", Enabled: true},
 
 		// delegation
 		{Name: "delegate_search", DisplayName: "Delegate Search", Description: "Search for available delegation targets by keyword when there are too many linked agents to list", Category: "delegation", Enabled: true,
@@ -112,7 +113,7 @@ func builtinToolSeedData() []store.BuiltinToolDef {
 		{Name: "evaluate_loop", DisplayName: "Evaluate Loop", Description: "Run a generate→evaluate→revise loop between two agents for quality-critical output", Category: "delegation", Enabled: true,
 			Requires: []string{"managed_mode", "agent_links"},
 		},
-		{Name: "handoff", DisplayName: "Handoff", Description: "Transfer the conversation to another agent — the user will talk directly to that agent", Category: "delegation", Enabled: true,
+		{Name: "handoff", DisplayName: "Handoff", Description: "Transfer the conversation to another agent — the user will talk directly to that agent", Category: "delegation", Enabled: false,
 			Requires: []string{"managed_mode", "agent_links"},
 		},
 

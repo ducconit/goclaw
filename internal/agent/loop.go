@@ -111,7 +111,13 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			l.userWorkspaces.Store(req.UserID, ws)
 			cachedWs = ws
 		}
-		effectiveWorkspace := filepath.Join(cachedWs.(string), sanitizePathSegment(req.UserID))
+		effectiveWorkspace := cachedWs.(string)
+		if !l.shouldShareWorkspace(req.UserID, req.PeerKind) {
+			effectiveWorkspace = filepath.Join(effectiveWorkspace, sanitizePathSegment(req.UserID))
+		}
+		if l.shouldShareMemory() {
+			ctx = store.WithSharedMemory(ctx)
+		}
 		if err := os.MkdirAll(effectiveWorkspace, 0755); err != nil {
 			slog.Warn("failed to create user workspace directory", "workspace", effectiveWorkspace, "user", req.UserID, "error", err)
 		}
@@ -287,6 +293,8 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 	}
 	if len(videoRefs) > 0 {
 		ctx = tools.WithMediaVideoRefs(ctx, videoRefs)
+		// Embed media IDs into <media:video> tags so LLM can reference them.
+		l.enrichVideoIDs(messages, mediaRefs)
 	}
 
 	// 2e. Cross-session recovery: recover stale locked tasks and notify team leads
@@ -586,6 +594,17 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 					}
 				}
 			}
+			// Mid-run injection (Point B): drain all buffered user follow-up messages
+			// before exiting. If found, save current assistant response and continue
+			// the loop so the LLM can respond to the injected messages.
+			if forLLM, forSession := l.drainInjectChannel(req.InjectCh, emitRun); len(forLLM) > 0 {
+				messages = append(messages, providers.Message{Role: "assistant", Content: resp.Content})
+				messages = append(messages, forLLM...)
+				pendingMsgs = append(pendingMsgs, providers.Message{Role: "assistant", Content: resp.Content})
+				pendingMsgs = append(pendingMsgs, forSession...)
+				continue
+			}
+
 			finalContent = resp.Content
 			finalThinking = resp.Thinking
 			break
@@ -915,6 +934,14 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			if loopStuck {
 				break
 			}
+		}
+
+		// Mid-run injection (Point A): drain any user follow-up messages
+		// that arrived during tool execution. Append them after tool results
+		// so the next LLM call sees: [tool results...] + [user follow-ups...].
+		if forLLM, forSession := l.drainInjectChannel(req.InjectCh, emitRun); len(forLLM) > 0 {
+			messages = append(messages, forLLM...)
+			pendingMsgs = append(pendingMsgs, forSession...)
 		}
 	}
 

@@ -77,6 +77,13 @@ export interface QualityGateConfig {
   timeout_seconds?: number;
 }
 
+export interface WorkspaceSharingConfig {
+  shared_dm?: boolean;
+  shared_group?: boolean;
+  shared_users?: string[];
+  share_memory?: boolean;
+}
+
 export interface AgentData {
   id: string;
   agent_key: string;

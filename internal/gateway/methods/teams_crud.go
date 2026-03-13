@@ -108,6 +108,7 @@ func (m *TeamsMethods) handleDelete(ctx context.Context, client *gateway.Client,
 		}
 	}
 
+	emitAudit(m.eventBus, client, "team.deleted", "team", teamID.String())
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"ok": true}))
 
 	// Emit team.deleted event
@@ -231,6 +232,7 @@ func (m *TeamsMethods) handleUpdate(ctx context.Context, client *gateway.Client,
 	}
 
 	m.invalidateTeamCaches(ctx, teamID)
+	emitAudit(m.eventBus, client, "team.updated", "team", teamID.String())
 
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"ok": true}))
 

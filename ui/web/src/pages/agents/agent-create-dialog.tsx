@@ -25,7 +25,7 @@ import { slugify, isValidSlug } from "@/lib/slug";
 import { useProviders } from "@/pages/providers/hooks/use-providers";
 import { useProviderModels } from "@/pages/providers/hooks/use-provider-models";
 import { useProviderVerify } from "@/pages/providers/hooks/use-provider-verify";
-import { AGENT_PRESETS } from "./agent-presets";
+import { useAgentPresets } from "./agent-presets";
 
 interface AgentCreateDialogProps {
   open: boolean;
@@ -35,13 +35,14 @@ interface AgentCreateDialogProps {
 
 export function AgentCreateDialog({ open, onOpenChange, onCreate }: AgentCreateDialogProps) {
   const { t } = useTranslation("agents");
+  const agentPresets = useAgentPresets();
   const { providers } = useProviders();
   const [agentKey, setAgentKey] = useState("");
   const [keyTouched, setKeyTouched] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
-  const [agentType, setAgentType] = useState<"open" | "predefined">("open");
+  const [agentType, setAgentType] = useState<"open" | "predefined">("predefined");
   const [description, setDescription] = useState("");
   const [selfEvolve, setSelfEvolve] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -210,18 +211,6 @@ export function AgentCreateDialog({ open, onOpenChange, onCreate }: AgentCreateD
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setAgentType("open")}
-                className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                  agentType === "open"
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-input bg-background hover:bg-accent"
-                }`}
-              >
-                {t("create.open")}
-                <span className="block text-xs font-normal opacity-70">{t("create.openSubLabel")}</span>
-              </button>
-              <button
-                type="button"
                 onClick={() => setAgentType("predefined")}
                 className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
                   agentType === "predefined"
@@ -232,6 +221,18 @@ export function AgentCreateDialog({ open, onOpenChange, onCreate }: AgentCreateD
                 {t("create.predefined")}
                 <span className="block text-xs font-normal opacity-70">{t("create.predefinedSubLabel")}</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setAgentType("open")}
+                className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                  agentType === "open"
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-input bg-background hover:bg-accent"
+                }`}
+              >
+                {t("create.open")}
+                <span className="block text-xs font-normal opacity-70">{t("create.openSubLabel")}</span>
+              </button>
             </div>
           </div>
 
@@ -239,7 +240,7 @@ export function AgentCreateDialog({ open, onOpenChange, onCreate }: AgentCreateD
             <div className="space-y-3">
               <Label>{t("create.describeAgent")}</Label>
               <div className="flex flex-wrap gap-1.5">
-                {AGENT_PRESETS.map((preset) => (
+                {agentPresets.map((preset) => (
                   <button
                     key={preset.label}
                     type="button"
