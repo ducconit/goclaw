@@ -289,13 +289,17 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 		ctx = tools.WithMediaVideoRefs(ctx, videoRefs)
 	}
 
-	// 2e. Cross-session recovery: notify team leads about orphaned pending tasks
-	// and in-progress tasks being handled by delegates.
+	// 2e. Cross-session recovery: recover stale locked tasks and notify team leads
+	// about orphaned pending tasks and in-progress tasks being handled by delegates.
 	// Safe because Bước 1 (early ClaimTask) ensures running tasks are in_progress,
 	// so only truly un-spawned tasks remain pending.
 	if l.teamStore != nil && l.agentUUID != uuid.Nil {
 		if team, _ := l.teamStore.GetTeamForAgent(ctx, l.agentUUID); team != nil && team.LeadAgentID == l.agentUUID {
-			if tasks, err := l.teamStore.ListTasks(ctx, team.ID, "newest", "", req.UserID); err == nil {
+			// Recover tasks with expired locks (stale in_progress → pending)
+			if recovered, err := l.teamStore.RecoverStaleTasks(ctx, team.ID); err == nil && recovered > 0 {
+				slog.Info("recovered stale tasks", "team", team.ID, "count", recovered)
+			}
+			if tasks, err := l.teamStore.ListTasks(ctx, team.ID, "newest", "", req.UserID, "", ""); err == nil {
 				var stale []string
 				var inProgress []string
 				for _, t := range tasks {
@@ -557,7 +561,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			if teamTaskCreates > teamTaskSpawns && !teamTaskRetried {
 				if l.teamStore != nil && l.agentUUID != uuid.Nil {
 					if team, _ := l.teamStore.GetTeamForAgent(ctx, l.agentUUID); team != nil {
-						if tasks, err := l.teamStore.ListTasks(ctx, team.ID, "newest", "", req.UserID); err == nil {
+						if tasks, err := l.teamStore.ListTasks(ctx, team.ID, "newest", "", req.UserID, "", ""); err == nil {
 							var pendingIDs []string
 							for _, t := range tasks {
 								if t.Status == store.TeamTaskStatusPending {

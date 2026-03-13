@@ -119,16 +119,36 @@ func (s *PGTeamStore) GetWorkspaceFile(ctx context.Context, teamID uuid.UUID, ch
 }
 
 func (s *PGTeamStore) ListWorkspaceFiles(ctx context.Context, teamID uuid.UUID, channel, chatID string) ([]store.TeamWorkspaceFileData, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT f.id, f.team_id, f.channel, f.chat_id, f.file_name, f.mime_type, f.file_path, f.size_bytes,
-		        f.uploaded_by, f.task_id, f.pinned, f.tags, f.metadata, f.archived_at, f.created_at, f.updated_at,
-		        COALESCE(a.agent_key, '') AS uploaded_by_key
-		 FROM team_workspace_files f
-		 LEFT JOIN agents a ON a.id = f.uploaded_by
-		 WHERE f.team_id = $1 AND f.channel = $2 AND f.chat_id = $3 AND f.archived_at IS NULL
-		 ORDER BY f.pinned DESC, f.updated_at DESC`,
-		teamID, channel, chatID,
+	// When both channel and chat_id are empty the caller wants all files for
+	// the team (used by the Workspace UI tab).  When at least one is non-empty
+	// filter to that exact scope.
+	var (
+		rows *sql.Rows
+		err  error
 	)
+	if channel == "" && chatID == "" {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT f.id, f.team_id, f.channel, f.chat_id, f.file_name, f.mime_type, f.file_path, f.size_bytes,
+			        f.uploaded_by, f.task_id, f.pinned, f.tags, f.metadata, f.archived_at, f.created_at, f.updated_at,
+			        COALESCE(a.agent_key, '') AS uploaded_by_key
+			 FROM team_workspace_files f
+			 LEFT JOIN agents a ON a.id = f.uploaded_by
+			 WHERE f.team_id = $1 AND f.archived_at IS NULL
+			 ORDER BY f.pinned DESC, f.updated_at DESC`,
+			teamID,
+		)
+	} else {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT f.id, f.team_id, f.channel, f.chat_id, f.file_name, f.mime_type, f.file_path, f.size_bytes,
+			        f.uploaded_by, f.task_id, f.pinned, f.tags, f.metadata, f.archived_at, f.created_at, f.updated_at,
+			        COALESCE(a.agent_key, '') AS uploaded_by_key
+			 FROM team_workspace_files f
+			 LEFT JOIN agents a ON a.id = f.uploaded_by
+			 WHERE f.team_id = $1 AND f.channel = $2 AND f.chat_id = $3 AND f.archived_at IS NULL
+			 ORDER BY f.pinned DESC, f.updated_at DESC`,
+			teamID, channel, chatID,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}

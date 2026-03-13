@@ -214,6 +214,13 @@ func (dm *DelegateManager) autoCompleteTeamTask(task *DelegationTask, resultCont
 	} else {
 		slog.Info("delegate: auto-completed team task",
 			"task_id", task.TeamTaskID, "delegation_id", task.ID)
+		// Record audit event.
+		_ = dm.teamStore.RecordTaskEvent(context.Background(), &store.TeamTaskEventData{
+			TaskID:    task.TeamTaskID,
+			EventType: "completed",
+			ActorType: "agent",
+			ActorID:   task.TargetAgentID.String(),
+		})
 		// Archive workspace files linked to this completed task (pinned files are immune).
 		_ = dm.teamStore.ArchiveWorkspaceFilesByTask(context.Background(), task.TeamTaskID)
 		// Task done — flush delegate sessions
@@ -257,6 +264,13 @@ func (dm *DelegateManager) autoFailTeamTask(task *DelegationTask, errMsg string)
 	} else {
 		slog.Info("delegate: auto-failed team task",
 			"task_id", task.TeamTaskID, "delegation_id", task.ID)
+		// Record audit event.
+		_ = dm.teamStore.RecordTaskEvent(context.Background(), &store.TeamTaskEventData{
+			TaskID:    task.TeamTaskID,
+			EventType: "failed",
+			ActorType: "agent",
+			ActorID:   task.TargetAgentID.String(),
+		})
 
 		// Persist delegation failure as team message for audit trail
 		if task.TeamID != uuid.Nil {

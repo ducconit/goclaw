@@ -11,10 +11,11 @@ import { RefreshCw, Trash2, FileText, Pin } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { useTranslation } from "react-i18next";
 import { useTeamWorkspace } from "./hooks/use-team-workspace";
-import type { TeamWorkspaceFile } from "@/types/team";
+import type { TeamWorkspaceFile, ScopeEntry } from "@/types/team";
 
 interface TeamWorkspaceTabProps {
   teamId: string;
+  scopes?: ScopeEntry[];
 }
 
 function formatBytes(bytes: number): string {
@@ -34,7 +35,7 @@ function formatDate(dateStr?: string): string {
   });
 }
 
-export function TeamWorkspaceTab({ teamId }: TeamWorkspaceTabProps) {
+export function TeamWorkspaceTab({ teamId, scopes }: TeamWorkspaceTabProps) {
   const { t } = useTranslation("teams");
   const { files, loading, listFiles, readFile, deleteFile } =
     useTeamWorkspace();
@@ -43,10 +44,11 @@ export function TeamWorkspaceTab({ teamId }: TeamWorkspaceTabProps) {
     content: string;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [selectedScope, setSelectedScope] = useState<ScopeEntry | null>(null);
 
   const load = useCallback(() => {
-    listFiles(teamId);
-  }, [teamId, listFiles]);
+    listFiles(teamId, selectedScope?.channel, selectedScope?.chat_id);
+  }, [teamId, listFiles, selectedScope]);
 
   useEffect(() => {
     load();
@@ -88,8 +90,31 @@ export function TeamWorkspaceTab({ teamId }: TeamWorkspaceTabProps) {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-medium">{t("workspace.title")}</h3>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium">{t("workspace.title")}</h3>
+          {scopes && scopes.length > 0 && (
+            <select
+              value={selectedScope ? `${selectedScope.channel}:${selectedScope.chat_id}` : ""}
+              onChange={(e) => {
+                if (!e.target.value) {
+                  setSelectedScope(null);
+                } else {
+                  const idx = e.target.value.indexOf(":");
+                  setSelectedScope({ channel: e.target.value.slice(0, idx), chat_id: e.target.value.slice(idx + 1) });
+                }
+              }}
+              className="rounded-md border bg-background px-2 py-1 text-base md:text-sm"
+            >
+              <option value="">{t("scope.all")}</option>
+              {scopes.map((s) => (
+                <option key={`${s.channel}:${s.chat_id}`} value={`${s.channel}:${s.chat_id}`}>
+                  {s.channel}:{s.chat_id.length > 12 ? s.chat_id.slice(0, 12) + "…" : s.chat_id}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
           <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
           {t("workspace.refresh")}

@@ -127,6 +127,17 @@ func (t *WorkspaceWriteTool) executeSetTemplate(ctx context.Context, args map[st
 		return ErrorResult("only the team lead can set workspace templates")
 	}
 
+	// Check escalation policy.
+	if esc := t.manager.checkEscalation(team, "set_template"); esc != EscalationNone {
+		if esc == EscalationReject {
+			return ErrorResult("set_template action is not allowed by team escalation policy")
+		}
+		agentID := store.AgentIDFromContext(ctx)
+		return t.manager.createEscalationTask(ctx, team, agentID,
+			"Set workspace templates",
+			"Agent requested to update workspace templates.")
+	}
+
 	templatesRaw, ok := args["templates"]
 	if !ok {
 		return ErrorResult("templates parameter is required for action=set_template")

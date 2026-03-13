@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -158,6 +159,18 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			quotaChecker.Increment(userID)
 		}
 
+		// Auto-clear followup reminders when user sends a message on a real channel.
+		// Fire-and-forget: don't block message processing.
+		if teamStore != nil && msg.Channel != "system" && msg.Channel != "delegate" && msg.Channel != "dashboard" {
+			go func(ch, cid string) {
+				if n, err := teamStore.ClearFollowupByScope(ctx, ch, cid); err != nil {
+					slog.Warn("auto-clear followup failed", "channel", ch, "chat_id", cid, "error", err)
+				} else if n > 0 {
+					slog.Info("auto-clear followup: cleared", "channel", ch, "chat_id", cid, "count", n)
+				}
+			}(msg.Channel, msg.ChatID)
+		}
+
 		slog.Info("inbound: scheduling message (main lane)",
 			"channel", msg.Channel,
 			"chat_id", msg.ChatID,
@@ -306,7 +319,7 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 		})
 
 		// Handle result asynchronously to not block the flush callback.
-		go func(channel, chatID, session, rID string, meta map[string]string, blockReplyEnabled bool) {
+		go func(agentKey, channel, chatID, session, rID string, meta map[string]string, blockReplyEnabled bool) {
 			outcome := <-outCh
 
 			// Clean up run tracking (in case HandleAgentEvent didn't fire for terminal events)
@@ -380,7 +393,12 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			appendMediaToOutbound(&outMsg, outcome.Result.Media)
 
 			msgBus.PublishOutbound(outMsg)
-		}(msg.Channel, msg.ChatID, sessionKey, runID, outMeta, blockReply)
+
+			// Auto-set followup when lead agent replies on a real channel with in_progress tasks.
+			if teamStore != nil && channel != "system" && channel != "delegate" && channel != "dashboard" {
+				go autoSetFollowup(ctx, teamStore, agentStore, agentKey, channel, chatID, outcome.Result.Content)
+			}
+		}(agentID, msg.Channel, msg.ChatID, sessionKey, runID, outMeta, blockReply)
 	}
 
 	// Inbound debounce: merge rapid messages from the same sender before processing.
@@ -756,7 +774,13 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			}
 
 			if origChannel == "" || msg.ChatID == "" {
-				slog.Warn("teammate message: missing origin", "sender", msg.SenderID)
+				slog.Warn("teammate message: missing origin — DROPPED",
+					"sender", msg.SenderID,
+					"target", targetAgent,
+					"origin_channel", origChannel,
+					"chat_id", msg.ChatID,
+					"user_id", msg.UserID,
+				)
 				continue
 			}
 
@@ -789,8 +813,41 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 				Stream:      false,
 			})
 
-			go func(origCh, chatID, senderID string, meta map[string]string) {
+			go func(origCh, chatID, senderID string, meta, inMeta map[string]string) {
 				outcome := <-outCh
+
+				// Auto-complete/fail the associated team task (if any).
+				if taskIDStr := inMeta["team_task_id"]; taskIDStr != "" {
+					teamTaskID, _ := uuid.Parse(taskIDStr)
+					teamID, _ := uuid.Parse(inMeta["team_id"])
+					if teamTaskID != uuid.Nil && teamStore != nil {
+						if outcome.Err != nil {
+							_ = teamStore.FailTask(ctx, teamTaskID, teamID, outcome.Err.Error())
+							_ = teamStore.RecordTaskEvent(ctx, &store.TeamTaskEventData{
+								TaskID:    teamTaskID,
+								EventType: "failed",
+								ActorType: "agent",
+								ActorID:   inMeta["to_agent"],
+							})
+						} else {
+							result := outcome.Result.Content
+							if len(outcome.Result.Deliverables) > 0 {
+								result = strings.Join(outcome.Result.Deliverables, "\n\n---\n\n")
+							}
+							if len(result) > 100_000 {
+								result = result[:100_000] + "\n[truncated]"
+							}
+							_ = teamStore.CompleteTask(ctx, teamTaskID, teamID, result)
+							_ = teamStore.RecordTaskEvent(ctx, &store.TeamTaskEventData{
+								TaskID:    teamTaskID,
+								EventType: "completed",
+								ActorType: "agent",
+								ActorID:   inMeta["to_agent"],
+							})
+						}
+					}
+				}
+
 				if outcome.Err != nil {
 					slog.Error("teammate message: agent run failed", "error", outcome.Err)
 					return
@@ -809,7 +866,7 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 				}
 				appendMediaToOutbound(&outMsg, outcome.Result.Media)
 				msgBus.PublishOutbound(outMsg)
-			}(origChannel, msg.ChatID, msg.SenderID, outMeta)
+			}(origChannel, msg.ChatID, msg.SenderID, outMeta, msg.Metadata)
 			continue
 		}
 
@@ -908,6 +965,76 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 		// --- Normal messages: route through debouncer ---
 		debouncer.Push(msg)
 	}
+}
+
+// autoSetFollowup sets followup reminders on in_progress tasks when the lead agent
+// replies on a real channel. Only sets followup if the task doesn't already have one
+// (respects LLM-initiated await_reply). Fire-and-forget, logs errors.
+func autoSetFollowup(ctx context.Context, teamStore store.TeamStore, agentStore store.AgentStore, agentKey, channel, chatID, content string) {
+	if agentStore == nil {
+		return
+	}
+	// agentKey may be a slug ("default") or a UUID string (from WS clients).
+	var ag *store.AgentData
+	var err error
+	if id, parseErr := uuid.Parse(agentKey); parseErr == nil {
+		ag, err = agentStore.GetByID(ctx, id)
+	} else {
+		ag, err = agentStore.GetByKey(ctx, agentKey)
+	}
+	if err != nil || ag == nil {
+		return
+	}
+	team, err := teamStore.GetTeamForAgent(ctx, ag.ID)
+	if err != nil || team == nil || team.LeadAgentID != ag.ID {
+		return // only lead agent triggers auto-set
+	}
+
+	interval, max := parseFollowupSettings(team)
+	followupAt := time.Now().Add(interval)
+	msg := truncateForReminder(content, 200)
+
+	n, err := teamStore.SetFollowupForActiveTasks(ctx, team.ID, channel, chatID, followupAt, max, msg)
+	if err != nil {
+		slog.Warn("auto-set followup failed", "channel", channel, "chat_id", chatID, "error", err)
+	} else if n > 0 {
+		slog.Info("auto-set followup: set", "channel", channel, "chat_id", chatID, "count", n, "followup_at", followupAt)
+	}
+}
+
+// parseFollowupSettings extracts followup interval and max reminders from team settings.
+func parseFollowupSettings(team *store.TeamData) (time.Duration, int) {
+	const (
+		defaultIntervalMins = 30
+		defaultMax          = 0 // unlimited
+	)
+	if team.Settings == nil {
+		return time.Duration(defaultIntervalMins) * time.Minute, defaultMax
+	}
+	var settings map[string]any
+	if json.Unmarshal(team.Settings, &settings) != nil {
+		return time.Duration(defaultIntervalMins) * time.Minute, defaultMax
+	}
+	interval := defaultIntervalMins
+	if v, ok := settings["followup_interval_minutes"].(float64); ok && v > 0 {
+		interval = int(v)
+	}
+	max := defaultMax
+	if v, ok := settings["followup_max_reminders"].(float64); ok && v >= 0 {
+		max = int(v)
+	}
+	return time.Duration(interval) * time.Minute, max
+}
+
+// truncateForReminder truncates content to maxLen chars, taking the last line as context.
+func truncateForReminder(content string, maxLen int) string {
+	// Use last non-empty line as it's typically the most relevant.
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	msg := lines[len(lines)-1]
+	if len(msg) > maxLen {
+		msg = msg[:maxLen] + "..."
+	}
+	return msg
 }
 
 // appendMediaToOutbound converts agent MediaResults to outbound MediaAttachments

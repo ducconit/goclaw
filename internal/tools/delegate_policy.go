@@ -42,6 +42,8 @@ type teamAccessSettings struct {
 	AllowChannels         []string `json:"allow_channels"`
 	DenyChannels          []string `json:"deny_channels"`
 	ProgressNotifications *bool    `json:"progress_notifications,omitempty"`
+	FollowupIntervalMins  *int     `json:"followup_interval_minutes,omitempty"`
+	FollowupMaxReminders  *int     `json:"followup_max_reminders,omitempty"`
 }
 
 // checkTeamAccess validates whether a user/channel combination is authorized

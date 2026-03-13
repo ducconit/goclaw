@@ -66,12 +66,15 @@ func (dm *DelegateManager) prepareDelegation(ctx context.Context, opts DelegateO
 			}
 		}
 		taskData := &store.TeamTaskData{
-			TeamID:      team.ID,
-			Subject:     subject,
-			Description: opts.Task,
-			Status:      store.TeamTaskStatusPending,
-			UserID:      store.UserIDFromContext(ctx),
-			Channel:     ToolChannelFromCtx(ctx),
+			TeamID:           team.ID,
+			Subject:          subject,
+			Description:      opts.Task,
+			Status:           store.TeamTaskStatusPending,
+			UserID:           store.UserIDFromContext(ctx),
+			Channel:          ToolChannelFromCtx(ctx),
+			TaskType:         "delegation",
+			CreatedByAgentID: &sourceAgentID,
+			ChatID:           ToolChatIDFromCtx(ctx),
 		}
 		if err := dm.teamStore.CreateTask(ctx, taskData); err != nil {
 			return nil, nil, fmt.Errorf("failed to auto-create team task: %w", err)
@@ -103,7 +106,7 @@ func (dm *DelegateManager) prepareDelegation(ctx context.Context, opts DelegateO
 		}
 
 		// Guard: reject completed/cancelled tasks — enforce "one task per delegation".
-		if teamTask.Status == store.TeamTaskStatusCompleted || teamTask.Status == "cancelled" {
+		if teamTask.Status == store.TeamTaskStatusCompleted || teamTask.Status == store.TeamTaskStatusCancelled {
 			ownerLabel := "another agent"
 			if teamTask.OwnerAgentKey != "" {
 				ownerLabel = teamTask.OwnerAgentKey

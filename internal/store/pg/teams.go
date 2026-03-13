@@ -69,7 +69,8 @@ func (s *PGTeamStore) DeleteTeam(ctx context.Context, teamID uuid.UUID) error {
 func (s *PGTeamStore) ListTeams(ctx context.Context) ([]store.TeamData, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT t.id, t.name, t.lead_agent_id, t.description, t.status, t.settings, t.created_by, t.created_at, t.updated_at,
-		 COALESCE(a.agent_key, '') AS lead_agent_key
+		 COALESCE(a.agent_key, '') AS lead_agent_key,
+		 COALESCE(a.display_name, '') AS lead_display_name
 		 FROM agent_teams t
 		 LEFT JOIN agents a ON a.id = t.lead_agent_id
 		 ORDER BY t.created_at`)
@@ -85,7 +86,7 @@ func (s *PGTeamStore) ListTeams(ctx context.Context) ([]store.TeamData, error) {
 		if err := rows.Scan(
 			&d.ID, &d.Name, &d.LeadAgentID, &desc, &d.Status,
 			&d.Settings, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt,
-			&d.LeadAgentKey,
+			&d.LeadAgentKey, &d.LeadDisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -129,6 +130,39 @@ func (s *PGTeamStore) ListMembers(ctx context.Context, teamID uuid.UUID) ([]stor
 		 JOIN agents a ON a.id = m.agent_id
 		 WHERE m.team_id = $1 AND a.status = 'active'
 		 ORDER BY m.joined_at`, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var members []store.TeamMemberData
+	for rows.Next() {
+		var d store.TeamMemberData
+		if err := rows.Scan(
+			&d.TeamID, &d.AgentID, &d.Role, &d.JoinedAt,
+			&d.AgentKey, &d.DisplayName, &d.Frontmatter,
+		); err != nil {
+			return nil, err
+		}
+		members = append(members, d)
+	}
+	return members, rows.Err()
+}
+
+func (s *PGTeamStore) ListIdleMembers(ctx context.Context, teamID uuid.UUID) ([]store.TeamMemberData, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT m.team_id, m.agent_id, m.role, m.joined_at,
+		 COALESCE(a.agent_key, '') AS agent_key,
+		 COALESCE(a.display_name, '') AS display_name,
+		 COALESCE(a.frontmatter, '') AS frontmatter
+		 FROM agent_team_members m
+		 JOIN agents a ON a.id = m.agent_id
+		 WHERE m.team_id = $1 AND a.status = 'active' AND m.role != $2
+		   AND NOT EXISTS (
+		     SELECT 1 FROM team_tasks t
+		     WHERE t.owner_agent_id = m.agent_id AND t.team_id = $1 AND t.status = $3
+		   )
+		 ORDER BY m.joined_at`, teamID, store.TeamRoleLead, store.TeamTaskStatusInProgress)
 	if err != nil {
 		return nil, err
 	}

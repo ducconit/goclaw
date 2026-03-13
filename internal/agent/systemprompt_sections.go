@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -380,12 +381,7 @@ func hasBootstrapFile(files []bootstrap.ContextFile) bool {
 
 // hasTeamWorkspace checks if workspace_write is in the tool list.
 func hasTeamWorkspace(toolNames []string) bool {
-	for _, n := range toolNames {
-		if n == "workspace_write" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(toolNames, "workspace_write")
 }
 
 // buildTeamWorkspaceSection generates guidance for team workspace tools.

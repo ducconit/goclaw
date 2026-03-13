@@ -229,6 +229,18 @@ func (t *WorkspaceReadTool) executeDelete(ctx context.Context, args map[string]a
 		if file.UploadedBy != agentID {
 			return ErrorResult("members can only delete their own files")
 		}
+	case store.TeamRoleLead:
+		// Lead deleting another agent's file: check escalation.
+		if file.UploadedBy != agentID {
+			if esc := t.manager.checkEscalation(team, "delete"); esc != EscalationNone {
+				if esc == EscalationReject {
+					return ErrorResult("deleting others' files is not allowed by team escalation policy")
+				}
+				return t.manager.createEscalationTask(ctx, team, agentID,
+					fmt.Sprintf("Delete file: %s", fileName),
+					fmt.Sprintf("Agent requested to delete file %q uploaded by another agent.", fileName))
+			}
+		}
 	}
 
 	// Delete versions from disk.
@@ -263,6 +275,18 @@ func (t *WorkspaceReadTool) executePin(ctx context.Context, args map[string]any,
 		return ErrorResult("only the team lead can pin/unpin files")
 	}
 
+	// Check escalation policy.
+	if esc := t.manager.checkEscalation(team, "pin"); esc != EscalationNone {
+		if esc == EscalationReject {
+			return ErrorResult("pin action is not allowed by team escalation policy")
+		}
+		agentID := store.AgentIDFromContext(ctx)
+		fileName, _ := args["file_name"].(string)
+		return t.manager.createEscalationTask(ctx, team, agentID,
+			fmt.Sprintf("Pin file: %s", fileName),
+			fmt.Sprintf("Agent requested to pin/unpin file %q in workspace.", fileName))
+	}
+
 	fileName, _ := args["file_name"].(string)
 	if fileName == "" {
 		return ErrorResult("file_name is required for action=pin")
@@ -287,6 +311,18 @@ func (t *WorkspaceReadTool) executePin(ctx context.Context, args map[string]any,
 func (t *WorkspaceReadTool) executeTag(ctx context.Context, args map[string]any, team *store.TeamData, role, channel, chatID string) *Result {
 	if role != store.TeamRoleLead {
 		return ErrorResult("only the team lead can set file tags")
+	}
+
+	// Check escalation policy.
+	if esc := t.manager.checkEscalation(team, "tag"); esc != EscalationNone {
+		if esc == EscalationReject {
+			return ErrorResult("tag action is not allowed by team escalation policy")
+		}
+		agentID := store.AgentIDFromContext(ctx)
+		fileName, _ := args["file_name"].(string)
+		return t.manager.createEscalationTask(ctx, team, agentID,
+			fmt.Sprintf("Tag file: %s", fileName),
+			fmt.Sprintf("Agent requested to tag file %q in workspace.", fileName))
 	}
 
 	fileName, _ := args["file_name"].(string)
