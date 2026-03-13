@@ -207,8 +207,10 @@ func (m *TeamsMethods) handleUpdate(ctx context.Context, client *gateway.Client,
 		return
 	}
 
-	// Validate settings against teamAccessSettings schema (strip unknown fields)
+	// Validate settings against teamAccessSettings schema (strip unknown fields).
+	// CRITICAL: version field MUST be here — otherwise it gets stripped on save.
 	type teamAccessSettings struct {
+		Version               *int     `json:"version,omitempty"`
 		AllowUserIDs          []string `json:"allow_user_ids"`
 		DenyUserIDs           []string `json:"deny_user_ids"`
 		AllowChannels         []string `json:"allow_channels"`
@@ -216,6 +218,10 @@ func (m *TeamsMethods) handleUpdate(ctx context.Context, client *gateway.Client,
 		ProgressNotifications *bool    `json:"progress_notifications,omitempty"`
 		FollowupIntervalMins  *int     `json:"followup_interval_minutes,omitempty"`
 		FollowupMaxReminders  *int     `json:"followup_max_reminders,omitempty"`
+		EscalationMode        string   `json:"escalation_mode,omitempty"`
+		EscalationActions     []string `json:"escalation_actions,omitempty"`
+		WorkspaceScope        string   `json:"workspace_scope,omitempty"`
+		WorkspaceQuotaMB      *int     `json:"workspace_quota_mb,omitempty"`
 	}
 	raw, _ := json.Marshal(params.Settings)
 	var access teamAccessSettings

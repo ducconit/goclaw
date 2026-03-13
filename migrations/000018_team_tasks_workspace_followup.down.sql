@@ -1,3 +1,7 @@
+-- Part 5: handoff team_id
+DROP INDEX IF EXISTS idx_hr_team;
+ALTER TABLE handoff_routes DROP COLUMN IF EXISTS team_id;
+
 -- Part 3: followup
 DROP INDEX IF EXISTS idx_tt_followup;
 ALTER TABLE team_tasks DROP COLUMN IF EXISTS followup_chat_id;

@@ -155,6 +155,9 @@ func (t *HandoffTool) executeTransfer(ctx context.Context, args map[string]any) 
 			Reason:       reason,
 			CreatedBy:    userID,
 		}
+		if sourceTeam, _ := t.teamStore.GetTeamForAgent(ctx, sourceAgentID); sourceTeam != nil {
+			route.TeamID = sourceTeam.ID
+		}
 		if err := t.teamStore.SetHandoffRoute(ctx, route); err != nil {
 			slog.Warn("handoff: failed to set route", "error", err)
 			return ErrorResult("failed to set handoff route: " + err.Error())
@@ -207,17 +210,18 @@ func (t *HandoffTool) executeTransfer(ctx context.Context, args map[string]any) 
 	}
 
 	// Copy deliverable workspace files to target agent's team workspace.
+	// Workspace scope uses userID (not raw chatID) for stable cross-session access.
 	if t.teamStore != nil && t.dataDir != "" {
 		sourceTeam, _ := t.teamStore.GetTeamForAgent(ctx, sourceAgentID)
 		targetTeam, _ := t.teamStore.GetTeamForAgent(ctx, targetAgent.ID)
 		if sourceTeam != nil && targetTeam != nil && sourceTeam.ID != targetTeam.ID {
-			deliverables, _ := t.teamStore.ListDeliverableFiles(ctx, sourceTeam.ID, channel, chatID)
+			deliverables, _ := t.teamStore.ListDeliverableFiles(ctx, sourceTeam.ID, "", userID)
 			if len(deliverables) > 0 {
 				fileIDs := make([]uuid.UUID, len(deliverables))
 				for i, f := range deliverables {
 					fileIDs[i] = f.ID
 				}
-				_ = t.teamStore.CopyFilesToTeam(ctx, fileIDs, targetTeam.ID, channel, chatID, t.dataDir)
+				_ = t.teamStore.CopyFilesToTeam(ctx, fileIDs, targetTeam.ID, "", userID, t.dataDir)
 				slog.Info("handoff: copied deliverable files",
 					"count", len(deliverables), "from_team", sourceTeam.ID, "to_team", targetTeam.ID)
 			}

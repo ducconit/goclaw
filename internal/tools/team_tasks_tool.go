@@ -25,7 +25,7 @@ func NewTeamTasksTool(manager *TeamToolManager) *TeamTasksTool {
 func (t *TeamTasksTool) Name() string { return "team_tasks" }
 
 func (t *TeamTasksTool) Description() string {
-	return "Manage the shared team task list. Actions: list, get, create, claim, complete, cancel, search, review, comment, progress, attach, update, await_reply, clear_followup. See TEAM.md for your team context."
+	return "Manage the shared team task list (create, claim, complete, track progress). See TEAM.md for available actions and team context."
 }
 
 func (t *TeamTasksTool) Parameters() map[string]any {
@@ -34,100 +34,82 @@ func (t *TeamTasksTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"action": map[string]any{
 				"type":        "string",
-				"description": "'list', 'get', 'create', 'claim', 'complete', 'cancel', 'search', 'review', 'comment', 'progress', 'attach', 'update', 'await_reply', or 'clear_followup'",
+				"description": "'list', 'get', 'create', 'claim', 'complete', 'cancel', 'approve', 'reject', 'search', 'review', 'comment', 'progress', 'attach', 'update', 'await_reply', or 'clear_followup'",
 			},
-			"status": map[string]any{
+			"task_id": map[string]any{
 				"type":        "string",
-				"description": "Filter for action=list: '' (active only, default), 'completed', 'all'",
-			},
-			"query": map[string]any{
-				"type":        "string",
-				"description": "Search query for action=search (searches subject and description)",
+				"description": "Task ID (required for most actions except list, create, search)",
 			},
 			"subject": map[string]any{
 				"type":        "string",
-				"description": "Task subject (required for action=create)",
+				"description": "Task subject (required for create, optional for update)",
 			},
 			"description": map[string]any{
 				"type":        "string",
-				"description": "Task description (for action=create or update)",
+				"description": "Task description (for create or update)",
+			},
+			"result": map[string]any{
+				"type":        "string",
+				"description": "Result summary (required for complete)",
+			},
+			"text": map[string]any{
+				"type":        "string",
+				"description": "Text content: comment text, cancel/reject reason, progress step, or followup reminder message",
+			},
+			"status": map[string]any{
+				"type":        "string",
+				"description": "Filter for list: '' (active, default), 'completed', 'all'",
+			},
+			"query": map[string]any{
+				"type":        "string",
+				"description": "Search query for action=search",
 			},
 			"priority": map[string]any{
 				"type":        "number",
-				"description": "Task priority, higher = more important (optional, for action=create, default 0)",
+				"description": "Priority, higher = more important (for create, default 0)",
 			},
 			"blocked_by": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Task IDs that must complete before this task can be claimed (optional, for action=create)",
-			},
-			"task_id": map[string]any{
-				"type":        "string",
-				"description": "Task ID (required for action=get, claim, complete, cancel, review, comment, progress, attach, update)",
-			},
-			"result": map[string]any{
-				"type":        "string",
-				"description": "Task result summary (required for action=complete)",
-			},
-			"reason": map[string]any{
-				"type":        "string",
-				"description": "Cancellation or rejection reason (optional for action=cancel or reject)",
+				"description": "Task IDs that must complete first (for create)",
 			},
 			"require_approval": map[string]any{
 				"type":        "boolean",
-				"description": "If true, task requires user approval before agents can claim it (optional for action=create, default false)",
-			},
-			"task_type": map[string]any{
-				"type":        "string",
-				"description": "Task type (optional for action=create: 'general', 'delegation', 'escalation')",
-			},
-			"parent_id": map[string]any{
-				"type":        "string",
-				"description": "Parent task ID (optional for action=create, for subtasks)",
-			},
-			"chat_id": map[string]any{
-				"type":        "string",
-				"description": "Origin chat ID (optional for action=create)",
-			},
-			"text": map[string]any{
-				"type":        "string",
-				"description": "Comment text (required for action=comment)",
+				"description": "Require user approval before claim (for create, default false)",
 			},
 			"percent": map[string]any{
 				"type":        "number",
-				"description": "Progress percentage 0-100 (required for action=progress)",
-			},
-			"step": map[string]any{
-				"type":        "string",
-				"description": "Progress step description (optional for action=progress)",
+				"description": "Progress 0-100 (for progress)",
 			},
 			"file_id": map[string]any{
 				"type":        "string",
-				"description": "Workspace file ID to attach (required for action=attach)",
-			},
-			"task_type_filter": map[string]any{
-				"type":        "string",
-				"description": "Filter by task_type for action=list",
-			},
-			"followup_message": map[string]any{
-				"type":        "string",
-				"description": "Reminder message to send (required for action=await_reply)",
-			},
-			"followup_delay_minutes": map[string]any{
-				"type":        "number",
-				"description": "Minutes before first reminder (optional for await_reply, default from team settings)",
-			},
-			"followup_max": map[string]any{
-				"type":        "number",
-				"description": "Max reminders to send, 0=unlimited (optional for await_reply, default from team settings)",
+				"description": "Workspace file ID (for attach)",
 			},
 		},
 		"required": []string{"action"},
 	}
 }
 
+// v2Actions lists team_tasks actions that require team version >= 2.
+var v2Actions = map[string]bool{
+	"approve": true, "reject": true, "review": true, "comment": true,
+	"progress": true, "attach": true, "update": true,
+	"await_reply": true, "clear_followup": true,
+}
+
 func (t *TeamTasksTool) Execute(ctx context.Context, args map[string]any) *Result {
 	action, _ := args["action"].(string)
+
+	// Gate v2-only actions: resolve team once and check version.
+	if v2Actions[action] {
+		team, _, err := t.manager.resolveTeam(ctx)
+		if err != nil {
+			return ErrorResult(err.Error())
+		}
+		if !IsTeamV2(team) {
+			return ErrorResult(fmt.Sprintf("action '%s' requires team version 2 — upgrade in team settings", action))
+		}
+	}
 
 	switch action {
 	case "list":
@@ -180,7 +162,7 @@ func (t *TeamTasksTool) executeList(ctx context.Context, args map[string]any) *R
 	// Delegate/system channels see all tasks; end users only see their own.
 	filterUserID := ""
 	channel := ToolChannelFromCtx(ctx)
-	if channel != "delegate" && channel != "system" {
+	if channel != ChannelDelegate && channel != ChannelSystem {
 		filterUserID = store.UserIDFromContext(ctx)
 	}
 
@@ -281,7 +263,7 @@ func (t *TeamTasksTool) executeSearch(ctx context.Context, args map[string]any) 
 	// Delegate/system channels see all tasks; end users only see their own.
 	filterUserID := ""
 	channel := ToolChannelFromCtx(ctx)
-	if channel != "delegate" && channel != "system" {
+	if channel != ChannelDelegate && channel != ChannelSystem {
 		filterUserID = store.UserIDFromContext(ctx)
 	}
 
@@ -340,6 +322,17 @@ func (t *TeamTasksTool) executeCreate(ctx context.Context, args map[string]any) 
 		}
 	}
 
+	// Validate that all blocked_by tasks belong to the same team.
+	for _, depID := range blockedBy {
+		depTask, err := t.manager.teamStore.GetTask(ctx, depID)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("blocked_by task %s not found: %v", depID, err))
+		}
+		if depTask.TeamID != team.ID {
+			return ErrorResult(fmt.Sprintf("blocked_by task %s belongs to a different team", depID))
+		}
+	}
+
 	requireApproval, _ := args["require_approval"].(bool)
 	status := store.TeamTaskStatusPending
 	if requireApproval {
@@ -348,21 +341,7 @@ func (t *TeamTasksTool) executeCreate(ctx context.Context, args map[string]any) 
 		status = store.TeamTaskStatusBlocked
 	}
 
-	taskType, _ := args["task_type"].(string)
-	if taskType == "" {
-		taskType = "general"
-	}
-	chatID, _ := args["chat_id"].(string)
-	if chatID == "" {
-		chatID = ToolChatIDFromCtx(ctx)
-	}
-
-	var parentID *uuid.UUID
-	if pid, ok := args["parent_id"].(string); ok && pid != "" {
-		if parsed, err := uuid.Parse(pid); err == nil {
-			parentID = &parsed
-		}
-	}
+	chatID := ToolChatIDFromCtx(ctx)
 
 	task := &store.TeamTaskData{
 		TeamID:           team.ID,
@@ -373,9 +352,8 @@ func (t *TeamTasksTool) executeCreate(ctx context.Context, args map[string]any) 
 		Priority:         priority,
 		UserID:           store.UserIDFromContext(ctx),
 		Channel:          ToolChannelFromCtx(ctx),
-		TaskType:         taskType,
+		TaskType:         "general",
 		CreatedByAgentID: &agentID,
-		ParentID:         parentID,
 		ChatID:           chatID,
 	}
 
@@ -434,7 +412,7 @@ func (t *TeamTasksTool) executeClaim(ctx context.Context, args map[string]any) *
 
 func (t *TeamTasksTool) executeComplete(ctx context.Context, args map[string]any) *Result {
 	// Delegate agents cannot complete tasks — autoCompleteTeamTask handles it.
-	if ToolChannelFromCtx(ctx) == "delegate" {
+	if ToolChannelFromCtx(ctx) == ChannelDelegate {
 		return ErrorResult("delegate agents cannot complete team tasks directly — results are auto-completed when delegation finishes")
 	}
 
@@ -484,7 +462,7 @@ func (t *TeamTasksTool) executeComplete(ctx context.Context, args map[string]any
 
 func (t *TeamTasksTool) executeCancel(ctx context.Context, args map[string]any) *Result {
 	// Delegate agents cannot cancel tasks — only lead/user-facing agents can.
-	if ToolChannelFromCtx(ctx) == "delegate" {
+	if ToolChannelFromCtx(ctx) == ChannelDelegate {
 		return ErrorResult("delegate agents cannot cancel team tasks directly")
 	}
 
@@ -505,7 +483,7 @@ func (t *TeamTasksTool) executeCancel(ctx context.Context, args map[string]any) 
 		return ErrorResult("invalid task_id")
 	}
 
-	reason, _ := args["reason"].(string)
+	reason, _ := args["text"].(string)
 	if reason == "" {
 		reason = "Cancelled by agent"
 	}
@@ -598,13 +576,22 @@ func (t *TeamTasksTool) executeReview(ctx context.Context, args map[string]any) 
 
 func (t *TeamTasksTool) executeApprove(ctx context.Context, args map[string]any) *Result {
 	// Delegate agents cannot approve tasks — approval requires user authority.
-	if ToolChannelFromCtx(ctx) == "delegate" {
+	if ToolChannelFromCtx(ctx) == ChannelDelegate {
 		return ErrorResult("delegate agents cannot approve team tasks")
 	}
 
-	team, _, err := t.manager.resolveTeam(ctx)
+	team, agentID, err := t.manager.resolveTeam(ctx)
 	if err != nil {
 		return ErrorResult(err.Error())
+	}
+
+	// Only lead can approve tasks via tool (non-lead agents should not approve).
+	// System/dashboard channels bypass this check (human UI approval).
+	ch := ToolChannelFromCtx(ctx)
+	if ch != ChannelSystem && ch != ChannelDashboard {
+		if err := t.manager.requireLead(ctx, team, agentID); err != nil {
+			return ErrorResult(err.Error())
+		}
 	}
 
 	taskIDStr, _ := args["task_id"].(string)
@@ -625,7 +612,7 @@ func (t *TeamTasksTool) executeApprove(ctx context.Context, args map[string]any)
 		return ErrorResult("task does not belong to your team")
 	}
 
-	// Atomic transition: pending_approval -> pending (or blocked if blockers exist)
+	// Atomic transition: in_review -> completed
 	if err := t.manager.teamStore.ApproveTask(ctx, taskID, team.ID, ""); err != nil {
 		return ErrorResult("failed to approve task: " + err.Error())
 	}
@@ -664,13 +651,21 @@ func (t *TeamTasksTool) executeApprove(ctx context.Context, args map[string]any)
 
 func (t *TeamTasksTool) executeReject(ctx context.Context, args map[string]any) *Result {
 	// Delegate agents cannot reject tasks.
-	if ToolChannelFromCtx(ctx) == "delegate" {
+	if ToolChannelFromCtx(ctx) == ChannelDelegate {
 		return ErrorResult("delegate agents cannot reject team tasks")
 	}
 
-	team, _, err := t.manager.resolveTeam(ctx)
+	team, agentID, err := t.manager.resolveTeam(ctx)
 	if err != nil {
 		return ErrorResult(err.Error())
+	}
+
+	// Only lead can reject tasks via tool.
+	ch := ToolChannelFromCtx(ctx)
+	if ch != ChannelSystem && ch != ChannelDashboard {
+		if err := t.manager.requireLead(ctx, team, agentID); err != nil {
+			return ErrorResult(err.Error())
+		}
 	}
 
 	taskIDStr, _ := args["task_id"].(string)
@@ -682,7 +677,7 @@ func (t *TeamTasksTool) executeReject(ctx context.Context, args map[string]any) 
 		return ErrorResult("invalid task_id")
 	}
 
-	reason, _ := args["reason"].(string)
+	reason, _ := args["text"].(string)
 	if reason == "" {
 		reason = "Rejected by user"
 	}
@@ -801,7 +796,7 @@ func (t *TeamTasksTool) executeProgress(ctx context.Context, args map[string]any
 	if percent < 0 || percent > 100 {
 		return ErrorResult("percent must be 0-100")
 	}
-	step, _ := args["step"].(string)
+	step, _ := args["text"].(string)
 
 	// Verify ownership.
 	task, err := t.manager.teamStore.GetTask(ctx, taskID)
@@ -936,9 +931,9 @@ func (t *TeamTasksTool) executeAwaitReply(ctx context.Context, args map[string]a
 		return ErrorResult("invalid task_id")
 	}
 
-	followupMessage, _ := args["followup_message"].(string)
+	followupMessage, _ := args["text"].(string)
 	if followupMessage == "" {
-		return ErrorResult("followup_message is required for await_reply action")
+		return ErrorResult("text is required for await_reply action (the reminder message)")
 	}
 
 	// Verify ownership.
@@ -953,25 +948,19 @@ func (t *TeamTasksTool) executeAwaitReply(ctx context.Context, args map[string]a
 		return ErrorResult("only the task owner can set follow-up reminders")
 	}
 
-	// Resolve delay and max from args or team settings.
+	// Resolve delay and max from team settings.
 	delayMinutes := t.manager.followupDelayMinutes(team)
-	if d, ok := args["followup_delay_minutes"].(float64); ok && d > 0 {
-		delayMinutes = int(d)
-	}
 	maxReminders := t.manager.followupMaxReminders(team)
-	if m, ok := args["followup_max"].(float64); ok && m >= 0 {
-		maxReminders = int(m)
-	}
 
 	// Resolve channel: prefer task's channel, fallback to context channel.
 	channel := task.Channel
 	chatID := task.ChatID
 	ctxChannel := ToolChannelFromCtx(ctx)
-	if channel == "" || channel == "delegate" || channel == "system" || channel == "dashboard" {
+	if channel == "" || channel == ChannelDelegate || channel == ChannelSystem || channel == ChannelDashboard {
 		channel = ctxChannel
 		chatID = ToolChatIDFromCtx(ctx)
 	}
-	if channel == "" || channel == "delegate" || channel == "system" || channel == "dashboard" {
+	if channel == "" || channel == ChannelDelegate || channel == ChannelSystem || channel == ChannelDashboard {
 		return ErrorResult("cannot set follow-up: no valid channel found (task has no origin channel and context channel is internal)")
 	}
 

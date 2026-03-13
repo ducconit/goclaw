@@ -2,7 +2,8 @@
 -- Part 1: Team workspace (shared file storage)
 -- ============================================================
 
--- Team workspace: shared file storage scoped by (team, channel, chat_id).
+-- Team workspace: shared file storage scoped by (team, chat_id).
+-- chat_id stores the system-derived userID (stable across WS reconnects).
 CREATE TABLE team_workspace_files (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     team_id     UUID NOT NULL REFERENCES agent_teams(id) ON DELETE CASCADE,
@@ -20,10 +21,10 @@ CREATE TABLE team_workspace_files (
     archived_at TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(team_id, channel, chat_id, file_name)
+    UNIQUE(team_id, chat_id, file_name)
 );
 
-CREATE INDEX idx_twf_team_channel ON team_workspace_files(team_id, channel, chat_id);
+CREATE INDEX idx_twf_team_scope ON team_workspace_files(team_id, chat_id);
 CREATE INDEX idx_twf_uploaded_by  ON team_workspace_files(uploaded_by);
 CREATE INDEX idx_twf_task         ON team_workspace_files(task_id) WHERE task_id IS NOT NULL;
 CREATE INDEX idx_twf_archived     ON team_workspace_files(archived_at) WHERE archived_at IS NOT NULL;
@@ -150,3 +151,17 @@ ALTER TABLE team_tasks ADD COLUMN followup_chat_id  VARCHAR(255);
 
 CREATE INDEX idx_tt_followup ON team_tasks(followup_at)
   WHERE followup_at IS NOT NULL AND status = 'in_progress';
+
+-- ============================================================
+-- Part 4: Fix blocked_by DEFAULT (was NULL, should be empty array)
+-- ============================================================
+
+ALTER TABLE team_tasks ALTER COLUMN blocked_by SET DEFAULT '{}'::uuid[];
+UPDATE team_tasks SET blocked_by = '{}' WHERE blocked_by IS NULL;
+
+-- ============================================================
+-- Part 5: Add team_id to handoff_routes
+-- ============================================================
+
+ALTER TABLE handoff_routes ADD COLUMN team_id UUID REFERENCES agent_teams(id) ON DELETE SET NULL;
+CREATE INDEX idx_hr_team ON handoff_routes(team_id) WHERE team_id IS NOT NULL;

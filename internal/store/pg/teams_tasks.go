@@ -435,7 +435,7 @@ func unblockDependentTasks(ctx context.Context, tx *sql.Tx, taskID uuid.UUID) er
 	_, err := tx.ExecContext(ctx,
 		`UPDATE team_tasks SET
 		   blocked_by = array_remove(blocked_by, $1),
-		   status = CASE WHEN status = 'blocked' AND blocked_by = ARRAY[$1]::uuid[] THEN 'pending' ELSE status END,
+		   status = CASE WHEN status = 'blocked' AND array_length(array_remove(blocked_by, $1), 1) IS NULL THEN 'pending' ELSE status END,
 		   updated_at = $2
 		 WHERE $1 = ANY(blocked_by)`,
 		taskID, time.Now(),
