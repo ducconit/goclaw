@@ -118,6 +118,12 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 	denyOverrides := store.ShellDenyGroupsFromContext(ctx)
 	groupPatterns := ResolveDenyPatterns(denyOverrides)
 
+	// Also resolve package_install patterns separately for approval routing.
+	var pkgInstallPatterns []*regexp.Regexp
+	if pkgGroup, ok := DenyGroupRegistry["package_install"]; ok && IsGroupDenied(denyOverrides, "package_install") {
+		pkgInstallPatterns = pkgGroup.Patterns
+	}
+
 	// Combine group-based patterns + always-on path denials.
 	allPatterns := make([]*regexp.Regexp, 0, len(groupPatterns)+len(t.pathDenyPatterns))
 	allPatterns = append(allPatterns, groupPatterns...)
@@ -134,9 +140,26 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 					break
 				}
 			}
-			if !exempt {
-				return ErrorResult(fmt.Sprintf("command denied by safety policy: matches pattern %s", pattern.String()))
+			if exempt {
+				continue
 			}
+
+			// Package install commands: route through approval flow instead of hard deny.
+			// This lets agents "request permission" from admin to install packages.
+			if t.approvalMgr != nil && matchesAny(command, pkgInstallPatterns) {
+				slog.Info("exec: package install requires approval", "command", truncateCmd(command, 100), "agent", t.agentID)
+				decision, err := t.approvalMgr.RequestApproval(command, t.agentID, 2*time.Minute)
+				if err != nil {
+					return ErrorResult(fmt.Sprintf("package install approval: %v", err))
+				}
+				if decision == ApprovalDeny {
+					return ErrorResult("package installation denied by admin")
+				}
+				// Approved — skip deny, continue to execution.
+				continue
+			}
+
+			return ErrorResult(fmt.Sprintf("command denied by safety policy: matches pattern %s", pattern.String()))
 		}
 	}
 
@@ -201,6 +224,16 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 
 	// Host execution
 	return t.executeOnHost(ctx, command, cwd)
+}
+
+// matchesAny checks if a command matches any pattern in the list.
+func matchesAny(command string, patterns []*regexp.Regexp) bool {
+	for _, p := range patterns {
+		if p.MatchString(command) {
+			return true
+		}
+	}
+	return false
 }
 
 // executeOnHost runs a command directly on the host (original behavior).

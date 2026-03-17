@@ -326,7 +326,7 @@ func buildToolingSection(toolNames []string, hasSandbox bool, shellDenyGroups ma
 	if tools.IsGroupDenied(shellDenyGroups, "package_install") {
 		lines = append(lines,
 			"",
-			"Package installation (pip, npm, apk) is restricted to administrators via the Web UI Packages page. You cannot install packages directly.",
+			"Package installation (pip, npm, apk) requires admin approval. If you need to install a package, use exec with the install command — it will be routed to the admin for approval. Alternatively, ask the user to install via the Web UI Packages page.",
 		)
 	} else {
 		lines = append(lines,
