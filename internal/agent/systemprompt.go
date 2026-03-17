@@ -320,7 +320,7 @@ func buildToolingSection(toolNames []string, hasSandbox bool) []string {
 
 	lines = append(lines,
 		"",
-		"You can install packages at runtime with `pip3 install <pkg>` or `npm install -g <pkg>` — no sudo needed.",
+		"Package installation (pip, npm, apk) is restricted to administrators via the Web UI Packages page. You cannot install packages directly.",
 	)
 	lines = append(lines,
 		"",

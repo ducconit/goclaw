@@ -177,7 +177,7 @@ func (t *PublishSkillTool) Execute(ctx context.Context, args map[string]any) *Re
 		result += "\n- Granted to current agent"
 	}
 	if depsWarning != "" {
-		result += fmt.Sprintf("\n\n⚠ Missing dependencies: %s\nTry installing them with exec (e.g. pip install <pkg> or npm install <pkg>). If you cannot install system binaries, inform the user.", depsWarning)
+		result += fmt.Sprintf("\n\n⚠ Missing dependencies: %s\nPackage installation is restricted to administrators via the Web UI Packages page. Inform the user to install the missing dependencies there.", depsWarning)
 	}
 
 	return NewResult(result)

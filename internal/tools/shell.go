@@ -112,6 +112,17 @@ var DefaultDenyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`>\s*~/?\.(bashrc|bash_profile|profile|zshrc)`), // shell RC injection
 	regexp.MustCompile(`\btee\b.*\.(bashrc|bash_profile|profile|zshrc)`),
 
+	// ── Package installation (admin-only via Web UI) ──
+	regexp.MustCompile(`\bpip3?\s+install\b`),
+	regexp.MustCompile(`\bnpm\s+install\b`),
+	regexp.MustCompile(`\bnpm\s+i\b`),
+	regexp.MustCompile(`\bapk\s+(add|del)\b`),
+	regexp.MustCompile(`\bdoas\s+apk\b`),
+	regexp.MustCompile(`\byarn\s+(add|global)\b`),
+	regexp.MustCompile(`\bpnpm\s+(add|install)\b`),
+	regexp.MustCompile(`\bpip3?\s+uninstall\b`),
+	regexp.MustCompile(`\bnpm\s+uninstall\b`),
+
 	// ── Process manipulation ──
 	regexp.MustCompile(`\bkill\s+-9\s`),
 	regexp.MustCompile(`\b(killall|pkill)\b`),
