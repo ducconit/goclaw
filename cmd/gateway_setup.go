@@ -110,10 +110,12 @@ func setupToolRegistry(
 		toolsReg.Register(webSearchTool)
 		slog.Info("web_search tool enabled")
 	}
+	defuddleEnabled := cfg.Tools.WebFetch.DefuddleEnabled == nil || *cfg.Tools.WebFetch.DefuddleEnabled
 	webFetchTool = tools.NewWebFetchTool(tools.WebFetchConfig{
-		Policy:         cfg.Tools.WebFetch.Policy,
-		AllowedDomains: cfg.Tools.WebFetch.AllowedDomains,
-		BlockedDomains: cfg.Tools.WebFetch.BlockedDomains,
+		Policy:          cfg.Tools.WebFetch.Policy,
+		AllowedDomains:  cfg.Tools.WebFetch.AllowedDomains,
+		BlockedDomains:  cfg.Tools.WebFetch.BlockedDomains,
+		DefuddleEnabled: defuddleEnabled,
 	})
 	toolsReg.Register(webFetchTool)
 	slog.Info("web_fetch tool enabled", "policy", cfg.Tools.WebFetch.Policy, "blocked", len(cfg.Tools.WebFetch.BlockedDomains))

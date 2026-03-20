@@ -27,21 +27,24 @@ const (
 
 // WebFetchTool implements the web_fetch tool matching TS src/agents/tools/web-fetch.ts.
 type WebFetchTool struct {
-	maxChars       int
-	cache          *webCache
-	policy         string   // "allow_all" (default), "allowlist"
-	allowedDomains []string // domains when policy="allowlist" (supports "*.example.com")
-	blockedDomains []string // always checked regardless of policy (supports "*.example.com")
-	mu             sync.RWMutex
+	maxChars        int
+	cache           *webCache
+	policy          string   // "allow_all" (default), "allowlist"
+	allowedDomains  []string // domains when policy="allowlist" (supports "*.example.com")
+	blockedDomains  []string // always checked regardless of policy (supports "*.example.com")
+	defuddleEnabled bool     // enable Defuddle CF Worker extractor
+	chain           *ExtractorChain
+	mu              sync.RWMutex
 }
 
 // WebFetchConfig holds configuration for the web fetch tool.
 type WebFetchConfig struct {
-	MaxChars       int
-	CacheTTL       time.Duration
-	Policy         string   // "allow_all" (default), "allowlist"
-	AllowedDomains []string // domains when policy="allowlist"
-	BlockedDomains []string // always blocked regardless of policy
+	MaxChars        int
+	CacheTTL        time.Duration
+	Policy          string   // "allow_all" (default), "allowlist"
+	AllowedDomains  []string // domains when policy="allowlist"
+	BlockedDomains  []string // always blocked regardless of policy
+	DefuddleEnabled bool     // enable Defuddle CF Worker as primary extractor
 }
 
 func NewWebFetchTool(cfg WebFetchConfig) *WebFetchTool {
@@ -57,13 +60,16 @@ func NewWebFetchTool(cfg WebFetchConfig) *WebFetchTool {
 	if policy == "" {
 		policy = "allow_all"
 	}
-	return &WebFetchTool{
-		maxChars:       maxChars,
-		cache:          newWebCache(defaultCacheMaxEntries, ttl),
-		policy:         policy,
-		allowedDomains: cfg.AllowedDomains,
-		blockedDomains: cfg.BlockedDomains,
+	t := &WebFetchTool{
+		maxChars:        maxChars,
+		cache:           newWebCache(defaultCacheMaxEntries, ttl),
+		policy:          policy,
+		allowedDomains:  cfg.AllowedDomains,
+		blockedDomains:  cfg.BlockedDomains,
+		defuddleEnabled: cfg.DefuddleEnabled,
 	}
+	t.rebuildChain()
+	return t
 }
 
 // UpdatePolicy replaces the domain policy at runtime (called via pub/sub on config change).
@@ -77,6 +83,34 @@ func (t *WebFetchTool) UpdatePolicy(policy string, allowed, blocked []string) {
 	t.allowedDomains = allowed
 	t.blockedDomains = blocked
 	slog.Info("web_fetch policy updated", "policy", policy, "allowed", len(allowed), "blocked", len(blocked))
+}
+
+// UpdateDefuddleEnabled toggles the Defuddle CF Worker extractor at runtime.
+func (t *WebFetchTool) UpdateDefuddleEnabled(enabled bool) {
+	t.mu.Lock()
+	t.defuddleEnabled = enabled
+	t.chain = buildExtractorChain(enabled)
+	t.mu.Unlock()
+	slog.Info("web_fetch defuddle updated", "enabled", enabled)
+}
+
+// rebuildChain creates the extractor chain based on current defuddleEnabled state.
+// Must be called without holding the mutex (used only during construction).
+func (t *WebFetchTool) rebuildChain() {
+	t.mu.Lock()
+	t.chain = buildExtractorChain(t.defuddleEnabled)
+	t.mu.Unlock()
+}
+
+// buildExtractorChain creates an ExtractorChain for the given enabled state.
+// Always includes InProcessExtractor as fallback; prepends DefuddleExtractor when enabled.
+func buildExtractorChain(defuddleEnabled bool) *ExtractorChain {
+	var extractors []ContentExtractor
+	if defuddleEnabled {
+		extractors = append(extractors, NewDefuddleExtractor())
+	}
+	extractors = append(extractors, NewInProcessExtractor())
+	return NewExtractorChain(extractors...)
 }
 
 // matchDomainList checks if a hostname matches any pattern in the list.
@@ -213,6 +247,30 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *Result
 }
 
 func (t *WebFetchTool) doFetch(ctx context.Context, rawURL, extractMode string, maxChars int, policy string) (string, error) {
+	// For markdown mode, use the extractor chain (Defuddle → InProcess waterfall).
+	// The chain already includes InProcessExtractor as fallback, so no doDirectFetch
+	// fallthrough is needed — that would be a redundant 3rd HTTP request.
+	if extractMode == "markdown" {
+		t.mu.RLock()
+		chain := t.chain
+		t.mu.RUnlock()
+
+		if chain != nil {
+			result, err := chain.Extract(ctx, rawURL)
+			if err == nil {
+				return formatFetchResult(result.Content, result.Extractor, rawURL, maxChars, ctx), nil
+			}
+			return "", fmt.Errorf("all extractors failed: %w", err)
+		}
+	}
+
+	// Text mode or chain not available — use direct HTTP fetch.
+	return t.doDirectFetch(ctx, rawURL, extractMode, maxChars, policy)
+}
+
+// doDirectFetch performs a direct HTTP GET with content-type routing.
+// Used for text mode extraction and as ultimate fallback.
+func (t *WebFetchTool) doDirectFetch(ctx context.Context, rawURL, extractMode string, maxChars int, policy string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
@@ -234,16 +292,13 @@ func (t *WebFetchTool) doFetch(ctx context.Context, rawURL, extractMode string, 
 			if redirectCount > defaultFetchMaxRedirect {
 				return fmt.Errorf("stopped after %d redirects", defaultFetchMaxRedirect)
 			}
-			// Check SSRF on redirect target
 			if err := CheckSSRF(req.URL.String()); err != nil {
 				return fmt.Errorf("redirect SSRF protection: %w", err)
 			}
-			// Check domain blocklist on redirect target
 			redirectHost := req.URL.Hostname()
 			if t.isDomainBlocked(redirectHost) {
 				return fmt.Errorf("redirect to %q blocked: domain is in blocklist", redirectHost)
 			}
-			// Check domain allowlist on redirect target
 			if policy == "allowlist" && !t.isDomainAllowed(redirectHost) {
 				return fmt.Errorf("redirect to %q blocked: domain not in allowlist", redirectHost)
 			}
@@ -257,10 +312,8 @@ func (t *WebFetchTool) doFetch(ctx context.Context, rawURL, extractMode string, 
 	}
 	defer resp.Body.Close()
 
-	// Read enough HTML to reach <body> content — pages often have 30-50KB+ <head> sections.
 	readLimit := int64(max(maxChars*10, 512*1024))
-	limitReader := io.LimitReader(resp.Body, readLimit)
-	body, err := io.ReadAll(limitReader)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, readLimit))
 	if err != nil {
 		return "", fmt.Errorf("read body: %w", err)
 	}
@@ -301,7 +354,7 @@ func (t *WebFetchTool) doFetch(ctx context.Context, rawURL, extractMode string, 
 		extractor = "raw"
 	}
 
-	// Format response metadata
+	// Format with full HTTP metadata (status, redirect info)
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("URL: %s\n", finalURL))
 	if finalURL != rawURL {
@@ -309,13 +362,26 @@ func (t *WebFetchTool) doFetch(ctx context.Context, rawURL, extractMode string, 
 	}
 	sb.WriteString(fmt.Sprintf("Status: %d\n", resp.StatusCode))
 	sb.WriteString(fmt.Sprintf("Extractor: %s\n", extractor))
+	appendContent(&sb, text, maxChars, finalURL, ctx)
 
-	// If content exceeds maxChars, save full content to a file in workspace
+	return sb.String(), nil
+}
+
+// formatFetchResult builds the metadata-prefixed response for chain-extracted content.
+func formatFetchResult(content, extractorName, rawURL string, maxChars int, ctx context.Context) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("URL: %s\n", rawURL))
+	sb.WriteString(fmt.Sprintf("Extractor: %s\n", extractorName))
+	appendContent(&sb, content, maxChars, rawURL, ctx)
+	return sb.String()
+}
+
+// appendContent writes content to the builder, handling truncation and temp file overflow.
+func appendContent(sb *strings.Builder, text string, maxChars int, sourceURL string, ctx context.Context) {
 	if len(text) > maxChars {
 		workspace := ToolWorkspaceFromCtx(ctx)
-		tmpPath, writeErr := writeWebFetchTempFile(workspace, text, finalURL)
+		tmpPath, writeErr := writeWebFetchTempFile(workspace, text, sourceURL)
 		if writeErr != nil {
-			// Fallback: truncate inline if temp file write fails
 			slog.Warn("web_fetch: failed to write temp file, falling back to truncation", "error", writeErr)
 			text = text[:maxChars]
 			sb.WriteString(fmt.Sprintf("Truncated: true (limit: %d chars)\n", maxChars))
@@ -336,8 +402,6 @@ func (t *WebFetchTool) doFetch(ctx context.Context, rawURL, extractMode string, 
 		sb.WriteString("\n")
 		sb.WriteString(text)
 	}
-
-	return sb.String(), nil
 }
 
 // writeWebFetchTempFile saves fetched content to a file with security sanitization.
