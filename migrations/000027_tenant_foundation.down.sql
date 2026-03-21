@@ -47,6 +47,12 @@ DROP TABLE IF EXISTS builtin_tool_tenant_configs;
 DROP TABLE IF EXISTS tenant_users;
 
 -- Drop tenant_id from all tables (reverse order)
+ALTER TABLE embedding_cache DROP COLUMN IF EXISTS tenant_id;
+ALTER TABLE spans DROP COLUMN IF EXISTS tenant_id;
+ALTER TABLE team_tasks DROP COLUMN IF EXISTS tenant_id;
+ALTER TABLE mcp_agent_grants DROP COLUMN IF EXISTS tenant_id;
+ALTER TABLE skill_agent_grants DROP COLUMN IF EXISTS tenant_id;
+ALTER TABLE agent_context_files DROP COLUMN IF EXISTS tenant_id;
 ALTER TABLE secure_cli_binaries DROP COLUMN IF EXISTS tenant_id;
 ALTER TABLE config_secrets DROP COLUMN IF EXISTS tenant_id;
 ALTER TABLE llm_providers DROP COLUMN IF EXISTS tenant_id;

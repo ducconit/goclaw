@@ -198,7 +198,7 @@ func (s *PGSecureCLIStore) Update(ctx context.Context, id uuid.UUID, updates map
 	}
 	tid := store.TenantIDFromContext(ctx)
 	if tid == uuid.Nil {
-		return execMapUpdate(ctx, s.db, "secure_cli_binaries", id, updates)
+		return fmt.Errorf("tenant_id required for update")
 	}
 	return execMapUpdateWhereTenant(ctx, s.db, "secure_cli_binaries", updates, id, tid)
 }

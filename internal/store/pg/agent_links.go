@@ -71,7 +71,15 @@ func (s *PGAgentLinkStore) CreateLink(ctx context.Context, link *store.AgentLink
 }
 
 func (s *PGAgentLinkStore) DeleteLink(ctx context.Context, id uuid.UUID) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM agent_links WHERE id = $1`, id)
+	if store.IsCrossTenant(ctx) {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM agent_links WHERE id = $1`, id)
+		return err
+	}
+	tid := store.TenantIDFromContext(ctx)
+	if tid == uuid.Nil {
+		return fmt.Errorf("tenant_id required for delete")
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM agent_links WHERE id = $1 AND tenant_id = $2`, id, tid)
 	return err
 }
 
@@ -85,7 +93,7 @@ func (s *PGAgentLinkStore) UpdateLink(ctx context.Context, id uuid.UUID, updates
 	}
 	tid := store.TenantIDFromContext(ctx)
 	if tid == uuid.Nil {
-		return execMapUpdate(ctx, s.db, "agent_links", id, updates)
+		return fmt.Errorf("tenant_id required for update")
 	}
 	return execMapUpdateWhereTenant(ctx, s.db, "agent_links", updates, id, tid)
 }

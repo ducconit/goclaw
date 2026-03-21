@@ -95,6 +95,18 @@ ALTER TABLE config_secrets ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-
 -- Other
 ALTER TABLE secure_cli_binaries ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
 
+-- Grant tables
+ALTER TABLE agent_context_files ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
+ALTER TABLE skill_agent_grants ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
+ALTER TABLE mcp_agent_grants ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
+
+-- Tasks + Tracing
+ALTER TABLE team_tasks ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
+ALTER TABLE spans ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
+
+-- Cache
+ALTER TABLE embedding_cache ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
+
 -- ============================================================
 -- Phase C: Drop defaults (force explicit tenant_id for new rows)
 -- ============================================================
@@ -131,6 +143,12 @@ ALTER TABLE channel_contacts ALTER COLUMN tenant_id DROP DEFAULT;
 ALTER TABLE llm_providers ALTER COLUMN tenant_id DROP DEFAULT;
 ALTER TABLE config_secrets ALTER COLUMN tenant_id DROP DEFAULT;
 ALTER TABLE secure_cli_binaries ALTER COLUMN tenant_id DROP DEFAULT;
+ALTER TABLE agent_context_files ALTER COLUMN tenant_id DROP DEFAULT;
+ALTER TABLE skill_agent_grants ALTER COLUMN tenant_id DROP DEFAULT;
+ALTER TABLE mcp_agent_grants ALTER COLUMN tenant_id DROP DEFAULT;
+ALTER TABLE team_tasks ALTER COLUMN tenant_id DROP DEFAULT;
+ALTER TABLE spans ALTER COLUMN tenant_id DROP DEFAULT;
+ALTER TABLE embedding_cache ALTER COLUMN tenant_id DROP DEFAULT;
 
 -- ============================================================
 -- Phase D: Indexes
@@ -169,6 +187,12 @@ CREATE INDEX idx_channel_contacts_tenant ON channel_contacts(tenant_id);
 CREATE INDEX idx_llm_providers_tenant ON llm_providers(tenant_id);
 CREATE INDEX idx_config_secrets_tenant ON config_secrets(tenant_id);
 CREATE INDEX idx_secure_cli_binaries_tenant ON secure_cli_binaries(tenant_id);
+CREATE INDEX idx_agent_context_files_tenant ON agent_context_files(tenant_id);
+CREATE INDEX idx_skill_agent_grants_tenant ON skill_agent_grants(tenant_id);
+CREATE INDEX idx_mcp_agent_grants_tenant ON mcp_agent_grants(tenant_id);
+CREATE INDEX idx_team_tasks_tenant ON team_tasks(tenant_id);
+CREATE INDEX idx_spans_tenant ON spans(tenant_id);
+CREATE INDEX idx_embedding_cache_tenant ON embedding_cache(tenant_id);
 
 -- Composite indexes for Plan 3 query performance
 CREATE INDEX idx_agents_tenant_active ON agents(tenant_id) WHERE deleted_at IS NULL;

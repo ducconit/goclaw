@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -83,13 +84,21 @@ func (s *PGTeamStore) UpdateTeam(ctx context.Context, teamID uuid.UUID, updates 
 	}
 	tid := store.TenantIDFromContext(ctx)
 	if tid == uuid.Nil {
-		return execMapUpdate(ctx, s.db, "agent_teams", teamID, updates)
+		return fmt.Errorf("tenant_id required for update")
 	}
 	return execMapUpdateWhereTenant(ctx, s.db, "agent_teams", updates, teamID, tid)
 }
 
 func (s *PGTeamStore) DeleteTeam(ctx context.Context, teamID uuid.UUID) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM agent_teams WHERE id = $1`, teamID)
+	if store.IsCrossTenant(ctx) {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM agent_teams WHERE id = $1`, teamID)
+		return err
+	}
+	tid := store.TenantIDFromContext(ctx)
+	if tid == uuid.Nil {
+		return fmt.Errorf("tenant_id required for delete")
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM agent_teams WHERE id = $1 AND tenant_id = $2`, teamID, tid)
 	return err
 }
 

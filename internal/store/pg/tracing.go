@@ -52,7 +52,7 @@ func (s *PGTracingStore) UpdateTrace(ctx context.Context, traceID uuid.UUID, upd
 	}
 	tid := store.TenantIDFromContext(ctx)
 	if tid == uuid.Nil {
-		return execMapUpdate(ctx, s.db, "traces", traceID, updates)
+		return fmt.Errorf("tenant_id required for update")
 	}
 	return execMapUpdateWhereTenant(ctx, s.db, "traces", updates, traceID, tid)
 }
@@ -118,11 +118,12 @@ func buildTraceWhere(ctx context.Context, opts store.TraceListOpts) (string, []a
 
 	if !store.IsCrossTenant(ctx) {
 		tenantID := store.TenantIDFromContext(ctx)
-		if tenantID != uuid.Nil {
-			conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
-			args = append(args, tenantID)
-			argIdx++
+		if tenantID == uuid.Nil {
+			return " WHERE 1=0", nil // fail-closed: no tenant = no results
 		}
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
+		args = append(args, tenantID)
+		argIdx++
 	}
 
 	if opts.AgentID != nil {
@@ -232,9 +233,20 @@ func (s *PGTracingStore) ListChildTraces(ctx context.Context, parentTraceID uuid
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, COALESCE(total_cost, 0), span_count, llm_call_count, tool_call_count,
 		 status, error, metadata, tags, team_id, created_at
-		 FROM traces WHERE parent_trace_id = $1 ORDER BY created_at`
+		 FROM traces WHERE parent_trace_id = $1`
+	qArgs := []any{parentTraceID}
 
-	rows, err := s.db.QueryContext(ctx, q, parentTraceID)
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid == uuid.Nil {
+			return nil, fmt.Errorf("tenant_id required")
+		}
+		q += " AND tenant_id = $2"
+		qArgs = append(qArgs, tid)
+	}
+	q += " ORDER BY created_at"
+
+	rows, err := s.db.QueryContext(ctx, q, qArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -452,12 +464,21 @@ func (s *PGTracingStore) BatchUpdateTraceAggregates(ctx context.Context, traceID
 func (s *PGTracingStore) GetMonthlyAgentCost(ctx context.Context, agentID uuid.UUID, year int, month time.Month) (float64, error) {
 	start := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 1, 0)
+
+	q := `SELECT COALESCE(SUM(total_cost), 0) FROM traces
+		 WHERE agent_id = $1 AND created_at >= $2 AND created_at < $3 AND parent_trace_id IS NULL`
+	qArgs := []any{agentID, start, end}
+
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid != uuid.Nil {
+			q += " AND tenant_id = $4"
+			qArgs = append(qArgs, tid)
+		}
+	}
+
 	var cost float64
-	err := s.db.QueryRowContext(ctx,
-		`SELECT COALESCE(SUM(total_cost), 0) FROM traces
-		 WHERE agent_id = $1 AND created_at >= $2 AND created_at < $3 AND parent_trace_id IS NULL`,
-		agentID, start, end,
-	).Scan(&cost)
+	err := s.db.QueryRowContext(ctx, q, qArgs...).Scan(&cost)
 	return cost, err
 }
 

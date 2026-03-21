@@ -224,7 +224,7 @@ func (s *PGChannelInstanceStore) Update(ctx context.Context, id uuid.UUID, updat
 	}
 	tid := store.TenantIDFromContext(ctx)
 	if tid == uuid.Nil {
-		return execMapUpdate(ctx, s.db, "channel_instances", id, updates)
+		return fmt.Errorf("tenant_id required for update")
 	}
 	return execMapUpdateWhereTenant(ctx, s.db, "channel_instances", updates, id, tid)
 }

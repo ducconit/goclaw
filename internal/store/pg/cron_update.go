@@ -195,7 +195,7 @@ func (s *PGCronStore) UpdateJob(ctx context.Context, jobID string, patch store.C
 	} else {
 		tid := store.TenantIDFromContext(ctx)
 		if tid == uuid.Nil {
-			execErr = execMapUpdate(ctx, s.db, "cron_jobs", id, updates)
+			execErr = fmt.Errorf("tenant_id required for update")
 		} else {
 			execErr = execMapUpdateWhereTenant(ctx, s.db, "cron_jobs", updates, id, tid)
 		}

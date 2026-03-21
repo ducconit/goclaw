@@ -96,18 +96,23 @@ func (s *PGSkillStore) GrantToUser(ctx context.Context, skillID uuid.UUID, userI
 		return err
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO skill_user_grants (id, skill_id, user_id, granted_by, created_at)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO skill_user_grants (id, skill_id, user_id, granted_by, created_at, tenant_id)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 ON CONFLICT (skill_id, user_id) DO NOTHING`,
-		store.GenNewID(), skillID, userID, grantedBy, time.Now(),
+		store.GenNewID(), skillID, userID, grantedBy, time.Now(), tenantIDForInsert(ctx),
 	)
 	return err
 }
 
 // RevokeFromUser revokes a skill grant from a user.
 func (s *PGSkillStore) RevokeFromUser(ctx context.Context, skillID uuid.UUID, userID string) error {
-	_, err := s.db.ExecContext(ctx,
-		"DELETE FROM skill_user_grants WHERE skill_id = $1 AND user_id = $2", skillID, userID)
+	tClause, tArgs, err := tenantClauseN(ctx, 3)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		"DELETE FROM skill_user_grants WHERE skill_id = $1 AND user_id = $2"+tClause,
+		append([]any{skillID, userID}, tArgs...)...)
 	return err
 }
 

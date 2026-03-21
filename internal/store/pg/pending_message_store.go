@@ -248,11 +248,21 @@ func (s *PGPendingMessageStore) ResolveGroupTitles(ctx context.Context, groups [
 		args = append(args, g.ChannelName, g.HistoryKey)
 	}
 
+	tenantFilter := ""
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid != uuid.Nil {
+			argIdx := len(args) + 1
+			tenantFilter = fmt.Sprintf(" AND tenant_id = $%d", argIdx)
+			args = append(args, tid)
+		}
+	}
+
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT session_key, metadata->>'chat_title'
-		 FROM sessions
-		 WHERE metadata->>'chat_title' != ''
-		   AND (`+strings.Join(conditions, " OR ")+`)`,
+		"SELECT session_key, metadata->>'chat_title'"+
+			" FROM sessions"+
+			" WHERE metadata->>'chat_title' != ''"+
+			" AND ("+strings.Join(conditions, " OR ")+")"+tenantFilter,
 		args...,
 	)
 	if err != nil {

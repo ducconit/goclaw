@@ -161,10 +161,11 @@ func (s *PGCronStore) RemoveJob(ctx context.Context, jobID string) error {
 
 	if !store.IsCrossTenant(ctx) {
 		tid := store.TenantIDFromContext(ctx)
-		if tid != uuid.Nil {
-			q += fmt.Sprintf(" AND tenant_id = $%d", len(args)+1)
-			args = append(args, tid)
+		if tid == uuid.Nil {
+			return fmt.Errorf("tenant_id required")
 		}
+		q += fmt.Sprintf(" AND tenant_id = $%d", len(args)+1)
+		args = append(args, tid)
 	}
 
 	res, err := s.db.ExecContext(ctx, q, args...)
@@ -189,10 +190,11 @@ func (s *PGCronStore) EnableJob(ctx context.Context, jobID string, enabled bool)
 
 	if !store.IsCrossTenant(ctx) {
 		tid := store.TenantIDFromContext(ctx)
-		if tid != uuid.Nil {
-			q += fmt.Sprintf(" AND tenant_id = $%d", len(args)+1)
-			args = append(args, tid)
+		if tid == uuid.Nil {
+			return fmt.Errorf("tenant_id required")
 		}
+		q += fmt.Sprintf(" AND tenant_id = $%d", len(args)+1)
+		args = append(args, tid)
 	}
 
 	res, err := s.db.ExecContext(ctx, q, args...)

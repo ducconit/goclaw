@@ -3,6 +3,8 @@ package pg
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -73,23 +75,37 @@ func (s *PGAPIKeyStore) GetByHash(ctx context.Context, keyHash string) (*store.A
 }
 
 func (s *PGAPIKeyStore) List(ctx context.Context, ownerID string) ([]store.APIKeyData, error) {
-	var rows *sql.Rows
-	var err error
+	var conditions []string
+	var args []any
+	argIdx := 1
+
 	if ownerID != "" {
-		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, name, prefix, scopes, owner_id, tenant_id, expires_at, last_used_at, revoked, created_by, created_at, updated_at
-			 FROM api_keys
-			 WHERE owner_id = $1
-			 ORDER BY created_at DESC`,
-			ownerID,
-		)
-	} else {
-		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, name, prefix, scopes, owner_id, tenant_id, expires_at, last_used_at, revoked, created_by, created_at, updated_at
-			 FROM api_keys
-			 ORDER BY created_at DESC`,
-		)
+		conditions = append(conditions, fmt.Sprintf("owner_id = $%d", argIdx))
+		args = append(args, ownerID)
+		argIdx++
 	}
+
+	// Tenant filter: include tenant-scoped keys + system keys (NULL tenant_id)
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid != uuid.Nil {
+			conditions = append(conditions, fmt.Sprintf("(tenant_id = $%d OR tenant_id IS NULL)", argIdx))
+			args = append(args, tid)
+			argIdx++
+		}
+	}
+
+	where := ""
+	if len(conditions) > 0 {
+		where = " WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, prefix, scopes, owner_id, tenant_id, expires_at, last_used_at, revoked, created_by, created_at, updated_at
+		 FROM api_keys`+where+`
+		 ORDER BY created_at DESC`,
+		args...,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -123,19 +139,24 @@ func (s *PGAPIKeyStore) List(ctx context.Context, ownerID string) ([]store.APIKe
 }
 
 func (s *PGAPIKeyStore) Revoke(ctx context.Context, id uuid.UUID, ownerID string) error {
-	var res sql.Result
-	var err error
+	q := "UPDATE api_keys SET revoked = true, updated_at = $1 WHERE id = $2"
+	args := []any{time.Now(), id}
+	argIdx := 3
+
 	if ownerID != "" {
-		res, err = s.db.ExecContext(ctx,
-			`UPDATE api_keys SET revoked = true, updated_at = $3 WHERE id = $1 AND owner_id = $2`,
-			id, ownerID, time.Now(),
-		)
-	} else {
-		res, err = s.db.ExecContext(ctx,
-			`UPDATE api_keys SET revoked = true, updated_at = $2 WHERE id = $1`,
-			id, time.Now(),
-		)
+		q += fmt.Sprintf(" AND owner_id = $%d", argIdx)
+		args = append(args, ownerID)
+		argIdx++
 	}
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid != uuid.Nil {
+			q += fmt.Sprintf(" AND (tenant_id = $%d OR tenant_id IS NULL)", argIdx)
+			args = append(args, tid)
+		}
+	}
+
+	res, err := s.db.ExecContext(ctx, q, args...)
 	if err != nil {
 		return err
 	}
@@ -147,19 +168,24 @@ func (s *PGAPIKeyStore) Revoke(ctx context.Context, id uuid.UUID, ownerID string
 }
 
 func (s *PGAPIKeyStore) Delete(ctx context.Context, id uuid.UUID, ownerID string) error {
-	var res sql.Result
-	var err error
+	q := "DELETE FROM api_keys WHERE id = $1"
+	args := []any{id}
+	argIdx := 2
+
 	if ownerID != "" {
-		res, err = s.db.ExecContext(ctx,
-			`DELETE FROM api_keys WHERE id = $1 AND owner_id = $2`,
-			id, ownerID,
-		)
-	} else {
-		res, err = s.db.ExecContext(ctx,
-			`DELETE FROM api_keys WHERE id = $1`,
-			id,
-		)
+		q += fmt.Sprintf(" AND owner_id = $%d", argIdx)
+		args = append(args, ownerID)
+		argIdx++
 	}
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid != uuid.Nil {
+			q += fmt.Sprintf(" AND (tenant_id = $%d OR tenant_id IS NULL)", argIdx)
+			args = append(args, tid)
+		}
+	}
+
+	res, err := s.db.ExecContext(ctx, q, args...)
 	if err != nil {
 		return err
 	}

@@ -219,7 +219,7 @@ func (s *PGMCPServerStore) UpdateServer(ctx context.Context, id uuid.UUID, updat
 	}
 	tid := store.TenantIDFromContext(ctx)
 	if tid == uuid.Nil {
-		return execMapUpdate(ctx, s.db, "mcp_servers", id, updates)
+		return fmt.Errorf("tenant_id required for update")
 	}
 	return execMapUpdateWhereTenant(ctx, s.db, "mcp_servers", updates, id, tid)
 }

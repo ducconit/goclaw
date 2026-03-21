@@ -29,9 +29,9 @@ type SkillCreateParams struct {
 func (s *PGSkillStore) CreateSkill(name, slug string, description *string, ownerID, visibility string, version int, filePath string, fileSize int64, fileHash *string) error {
 	id := store.GenNewID()
 	_, err := s.db.Exec(
-		`INSERT INTO skills (id, name, slug, description, owner_id, visibility, version, status, file_path, file_size, file_hash, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10, NOW(), NOW())`,
-		id, name, slug, description, ownerID, visibility, version, filePath, fileSize, fileHash,
+		`INSERT INTO skills (id, name, slug, description, owner_id, visibility, version, status, file_path, file_size, file_hash, tenant_id, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10, $11, NOW(), NOW())`,
+		id, name, slug, description, ownerID, visibility, version, filePath, fileSize, fileHash, store.MasterTenantID,
 	)
 	if err == nil {
 		s.BumpVersion()
@@ -46,7 +46,7 @@ func (s *PGSkillStore) UpdateSkill(ctx context.Context, id uuid.UUID, updates ma
 	} else {
 		tid := store.TenantIDFromContext(ctx)
 		if tid == uuid.Nil {
-			err = execMapUpdate(ctx, s.db, "skills", id, updates)
+			return fmt.Errorf("tenant_id required for update")
 		} else {
 			err = execMapUpdateWhereTenant(ctx, s.db, "skills", updates, id, tid)
 		}

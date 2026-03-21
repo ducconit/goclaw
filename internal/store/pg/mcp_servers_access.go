@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,8 +105,13 @@ func (s *PGMCPServerStore) ListServerGrants(ctx context.Context, serverID uuid.U
 // --- Counts ---
 
 func (s *PGMCPServerStore) CountAgentGrantsByServer(ctx context.Context) (map[uuid.UUID]int, error) {
+	tClause, tArgs, err := tenantClauseN(ctx, 1)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT server_id, COUNT(*) FROM mcp_agent_grants GROUP BY server_id`)
+		`SELECT server_id, COUNT(*) FROM mcp_agent_grants WHERE 1=1`+tClause+` GROUP BY server_id`,
+		tArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -163,6 +169,10 @@ func (s *PGMCPServerStore) RevokeFromUser(ctx context.Context, serverID uuid.UUI
 // --- Resolution ---
 
 func (s *PGMCPServerStore) ListAccessible(ctx context.Context, agentID uuid.UUID, userID string) ([]store.MCPAccessInfo, error) {
+	tClause, tArgs, err := tenantClauseN(ctx, 3)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT ms.id, ms.name, ms.display_name, ms.transport, ms.command, ms.args, ms.url, ms.headers, ms.env,
 		 ms.api_key, ms.tool_prefix, ms.timeout_sec, ms.settings, ms.enabled, ms.created_by, ms.created_at, ms.updated_at,
@@ -171,8 +181,9 @@ func (s *PGMCPServerStore) ListAccessible(ctx context.Context, agentID uuid.UUID
 		 INNER JOIN mcp_agent_grants mag ON ms.id = mag.server_id AND mag.agent_id = $1 AND mag.enabled = true
 		 LEFT JOIN mcp_user_grants mug ON ms.id = mug.server_id AND mug.user_id = $2
 		 WHERE ms.enabled = true
-		   AND (mug.id IS NULL OR mug.enabled = true)`,
-		agentID, userID)
+		   AND (mug.id IS NULL OR mug.enabled = true)`+
+			strings.Replace(tClause, "tenant_id", "ms.tenant_id", 1),
+		append([]any{agentID, userID}, tArgs...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -291,9 +302,14 @@ func (s *PGMCPServerStore) ReviewRequest(ctx context.Context, requestID uuid.UUI
 	var req store.MCPAccessRequest
 	var agentID *uuid.UUID
 	var userID *string
+	tClause, tArgs, err2 := tenantClauseN(ctx, 2)
+	if err2 != nil {
+		return err2
+	}
 	err = tx.QueryRowContext(ctx,
 		`SELECT id, server_id, agent_id, user_id, scope, status, tool_allow
-		 FROM mcp_access_requests WHERE id = $1 AND status = 'pending'`, requestID,
+		 FROM mcp_access_requests WHERE id = $1 AND status = 'pending'`+tClause,
+		append([]any{requestID}, tArgs...)...,
 	).Scan(&req.ID, &req.ServerID, &agentID, &userID, &req.Scope, &req.Status, &req.ToolAllow)
 	if err != nil {
 		return fmt.Errorf("request not found or not pending: %w", err)
@@ -322,20 +338,20 @@ func (s *PGMCPServerStore) ReviewRequest(ctx context.Context, requestID uuid.UUI
 				return fmt.Errorf("agent_id required for agent scope")
 			}
 			_, err = tx.ExecContext(ctx,
-				`INSERT INTO mcp_agent_grants (id, server_id, agent_id, enabled, tool_allow, granted_by, created_at)
-				 VALUES ($1,$2,$3,true,$4,$5,$6)
+				`INSERT INTO mcp_agent_grants (id, server_id, agent_id, enabled, tool_allow, granted_by, created_at, tenant_id)
+				 VALUES ($1,$2,$3,true,$4,$5,$6,$7)
 				 ON CONFLICT (server_id, agent_id) DO UPDATE SET enabled = true, tool_allow = EXCLUDED.tool_allow, granted_by = EXCLUDED.granted_by`,
-				store.GenNewID(), req.ServerID, *agentID, jsonOrNull(req.ToolAllow), reviewedBy, now,
+				store.GenNewID(), req.ServerID, *agentID, jsonOrNull(req.ToolAllow), reviewedBy, now, tenantIDForInsert(ctx),
 			)
 		case "user":
 			if userID == nil || *userID == "" {
 				return fmt.Errorf("user_id required for user scope")
 			}
 			_, err = tx.ExecContext(ctx,
-				`INSERT INTO mcp_user_grants (id, server_id, user_id, enabled, tool_allow, granted_by, created_at)
-				 VALUES ($1,$2,$3,true,$4,$5,$6)
+				`INSERT INTO mcp_user_grants (id, server_id, user_id, enabled, tool_allow, granted_by, created_at, tenant_id)
+				 VALUES ($1,$2,$3,true,$4,$5,$6,$7)
 				 ON CONFLICT (server_id, user_id) DO UPDATE SET enabled = true, tool_allow = EXCLUDED.tool_allow, granted_by = EXCLUDED.granted_by`,
-				store.GenNewID(), req.ServerID, *userID, jsonOrNull(req.ToolAllow), reviewedBy, now,
+				store.GenNewID(), req.ServerID, *userID, jsonOrNull(req.ToolAllow), reviewedBy, now, tenantIDForInsert(ctx),
 			)
 		default:
 			return fmt.Errorf("unknown scope: %s", req.Scope)
