@@ -41,12 +41,14 @@ type TenantData struct {
 
 // TenantUserData represents a user's membership in a tenant.
 type TenantUserData struct {
-	ID        uuid.UUID `json:"id"`
-	TenantID  uuid.UUID `json:"tenant_id"`
-	UserID    string    `json:"user_id"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          uuid.UUID       `json:"id"`
+	TenantID    uuid.UUID       `json:"tenant_id"`
+	UserID      string          `json:"user_id"`
+	DisplayName *string         `json:"display_name,omitempty"`
+	Role        string          `json:"role"`
+	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
 // TenantStore manages tenants and tenant-user membership.
@@ -69,4 +71,11 @@ type TenantStore interface {
 	// If user belongs to multiple tenants, returns the first (by created_at).
 	// If no membership, returns MasterTenantID (backward compat).
 	ResolveUserTenant(ctx context.Context, userID string) (uuid.UUID, error)
+
+	// GetTenantUser returns a single tenant_user by primary key.
+	GetTenantUser(ctx context.Context, id uuid.UUID) (*TenantUserData, error)
+
+	// CreateTenantUserReturning creates a tenant_user and returns the row.
+	// On conflict (tenant_id, user_id), updates role/display_name and returns existing row.
+	CreateTenantUserReturning(ctx context.Context, tenantID uuid.UUID, userID, displayName, role string) (*TenantUserData, error)
 }

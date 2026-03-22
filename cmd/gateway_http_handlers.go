@@ -51,7 +51,7 @@ func wireHTTP(stores *store.Stores, token, defaultWorkspace, dataDir, bundledSki
 	}
 
 	if stores != nil && stores.ChannelInstances != nil {
-		channelInstancesH = httpapi.NewChannelInstancesHandler(stores.ChannelInstances, stores.Agents, stores.ConfigPermissions, stores.Contacts, token, msgBus)
+		channelInstancesH = httpapi.NewChannelInstancesHandler(stores.ChannelInstances, stores.Agents, stores.ConfigPermissions, stores.Contacts, stores.Tenants, token, msgBus)
 	}
 
 	if stores != nil && stores.Providers != nil {

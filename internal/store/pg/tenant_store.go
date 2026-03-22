@@ -100,6 +100,39 @@ func (s *PGTenantStore) AddUser(ctx context.Context, tenantID uuid.UUID, userID,
 	return err
 }
 
+func (s *PGTenantStore) GetTenantUser(ctx context.Context, id uuid.UUID) (*store.TenantUserData, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, tenant_id, user_id, display_name, role, metadata, created_at, updated_at
+		 FROM tenant_users WHERE id = $1`, id)
+	var d store.TenantUserData
+	if err := row.Scan(&d.ID, &d.TenantID, &d.UserID, &d.DisplayName, &d.Role, &d.Metadata, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+func (s *PGTenantStore) CreateTenantUserReturning(ctx context.Context, tenantID uuid.UUID, userID, displayName, role string) (*store.TenantUserData, error) {
+	now := time.Now()
+	var dn *string
+	if displayName != "" {
+		dn = &displayName
+	}
+	row := s.db.QueryRowContext(ctx,
+		`INSERT INTO tenant_users (id, tenant_id, user_id, display_name, role, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (tenant_id, user_id) DO UPDATE SET
+		   display_name = COALESCE(EXCLUDED.display_name, tenant_users.display_name),
+		   updated_at = EXCLUDED.updated_at
+		 RETURNING id, tenant_id, user_id, display_name, role, metadata, created_at, updated_at`,
+		store.GenNewID(), tenantID, userID, dn, role, now, now,
+	)
+	var d store.TenantUserData
+	if err := row.Scan(&d.ID, &d.TenantID, &d.UserID, &d.DisplayName, &d.Role, &d.Metadata, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
 func (s *PGTenantStore) RemoveUser(ctx context.Context, tenantID uuid.UUID, userID string) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM tenant_users WHERE tenant_id = $1 AND user_id = $2`,
@@ -122,7 +155,7 @@ func (s *PGTenantStore) GetUserRole(ctx context.Context, tenantID uuid.UUID, use
 
 func (s *PGTenantStore) ListUsers(ctx context.Context, tenantID uuid.UUID) ([]store.TenantUserData, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, tenant_id, user_id, role, created_at, updated_at
+		`SELECT id, tenant_id, user_id, display_name, role, metadata, created_at, updated_at
 		 FROM tenant_users WHERE tenant_id = $1 ORDER BY created_at`, tenantID)
 	if err != nil {
 		return nil, err
@@ -133,7 +166,7 @@ func (s *PGTenantStore) ListUsers(ctx context.Context, tenantID uuid.UUID) ([]st
 
 func (s *PGTenantStore) ListUserTenants(ctx context.Context, userID string) ([]store.TenantUserData, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, tenant_id, user_id, role, created_at, updated_at
+		`SELECT id, tenant_id, user_id, display_name, role, metadata, created_at, updated_at
 		 FROM tenant_users WHERE user_id = $1 ORDER BY created_at`, userID)
 	if err != nil {
 		return nil, err
@@ -187,7 +220,7 @@ func scanTenantUserRows(rows *sql.Rows) ([]store.TenantUserData, error) {
 	var result []store.TenantUserData
 	for rows.Next() {
 		var d store.TenantUserData
-		if err := rows.Scan(&d.ID, &d.TenantID, &d.UserID, &d.Role, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.TenantID, &d.UserID, &d.DisplayName, &d.Role, &d.Metadata, &d.CreatedAt, &d.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, d)

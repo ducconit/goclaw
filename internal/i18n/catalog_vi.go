@@ -175,5 +175,11 @@ func init() {
 		MsgSkillNudge90Pct:      "[System] Bạn đã dùng 90% ngân sách vòng lặp. Nếu phiên này có quy trình tái sử dụng, hãy cân nhắc lưu thành kỹ năng trước khi hoàn thành.",
 
 		MsgInvalidRole: "vai trò không hợp lệ: giá trị cho phép là owner, admin, operator, member, viewer",
+
+		MsgContactIDsRequired:  "contact_ids là bắt buộc",
+		MsgMergeTargetRequired: "cần chính xác một trong tenant_user_id hoặc create_user",
+		MsgTenantUserNotFound:  "không tìm thấy tenant user",
+		MsgTenantMismatch:      "tenant user không thuộc tenant này",
+		MsgTenantScopeRequired: "cần xác định tenant để thực hiện thao tác này",
 	})
 }

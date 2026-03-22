@@ -23,12 +23,14 @@ INSERT INTO tenants (id, name, slug, status)
 VALUES ('0193a5b0-7000-7000-8000-000000000001', 'Master', 'master', 'active');
 
 CREATE TABLE tenant_users (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id  UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    user_id    VARCHAR(255) NOT NULL,
-    role       VARCHAR(20) NOT NULL DEFAULT 'member',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id    UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    user_id      VARCHAR(255) NOT NULL,
+    display_name VARCHAR(255),
+    role         VARCHAR(20) NOT NULL DEFAULT 'member',
+    metadata     JSONB NOT NULL DEFAULT '{}',
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(tenant_id, user_id)
 );
 

@@ -70,6 +70,9 @@ export const queryKeys = {
     all: ["packages"] as const,
     runtimes: ["packages", "runtimes"] as const,
   },
+  tenantUsers: {
+    all: ["tenantUsers"] as const,
+  },
   tenants: {
     all: ["tenants"] as const,
     detail: (tenantId: string) => ["tenants", tenantId] as const,

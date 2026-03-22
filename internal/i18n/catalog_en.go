@@ -175,5 +175,11 @@ func init() {
 		MsgSkillNudge90Pct:      "[System] You are at 90% of your iteration budget. If this session involved reusable patterns, consider saving them as a skill before completing.",
 
 		MsgInvalidRole: "invalid role: allowed values are owner, admin, operator, member, viewer",
+
+		MsgContactIDsRequired:  "contact_ids is required",
+		MsgMergeTargetRequired: "exactly one of tenant_user_id or create_user is required",
+		MsgTenantUserNotFound:  "tenant user not found",
+		MsgTenantMismatch:      "tenant user does not belong to this tenant",
+		MsgTenantScopeRequired: "tenant scope is required for this operation",
 	})
 }

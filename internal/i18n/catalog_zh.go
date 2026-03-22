@@ -175,5 +175,11 @@ func init() {
 		MsgSkillNudge90Pct:      "[System] 您已使用 90% 的迭代预算。如果本次会话涉及可重用的模式，请考虑在完成前将其保存为技能。",
 
 		MsgInvalidRole: "无效角色：允许的值为 owner、admin、operator、member、viewer",
+
+		MsgContactIDsRequired:  "contact_ids 为必填项",
+		MsgMergeTargetRequired: "必须提供 tenant_user_id 或 create_user 其中之一",
+		MsgTenantUserNotFound:  "未找到租户用户",
+		MsgTenantMismatch:      "租户用户不属于此租户",
+		MsgTenantScopeRequired: "此操作需要指定租户范围",
 	})
 }

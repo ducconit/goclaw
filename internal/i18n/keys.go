@@ -178,4 +178,11 @@ const (
 
 	// --- Tenants ---
 	MsgInvalidRole = "error.invalid_role" // "invalid role: allowed values are owner, admin, operator, member, viewer"
+
+	// --- Contact merge ---
+	MsgContactIDsRequired  = "error.contact_ids_required"  // "contact_ids is required"
+	MsgMergeTargetRequired = "error.merge_target_required"  // "exactly one of tenant_user_id or create_user is required"
+	MsgTenantUserNotFound  = "error.tenant_user_not_found"  // "tenant user not found"
+	MsgTenantMismatch      = "error.tenant_mismatch"        // "tenant user does not belong to this tenant"
+	MsgTenantScopeRequired = "error.tenant_scope_required"  // "tenant scope is required for this operation"
 )
