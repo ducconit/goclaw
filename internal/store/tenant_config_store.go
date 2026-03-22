@@ -17,6 +17,8 @@ type BuiltinToolTenantConfig struct {
 type BuiltinToolTenantConfigStore interface {
 	// ListDisabled returns tool names disabled for a tenant.
 	ListDisabled(ctx context.Context, tenantID uuid.UUID) ([]string, error)
+	// ListAll returns all tenant overrides (tool_name → enabled) for a tenant.
+	ListAll(ctx context.Context, tenantID uuid.UUID) (map[string]bool, error)
 	// Set creates or updates a tenant tool config.
 	Set(ctx context.Context, tenantID uuid.UUID, toolName string, enabled bool) error
 	// Delete removes a tenant tool config (reverts to default).

@@ -85,6 +85,8 @@
     "tenantDisabled": "Disabled for this tenant",
     "tenantDefault": "Using default",
     "resetToDefault": "Reset to default",
+    "unconfiguredWarning": "{{count}} tools need provider configuration for agents to use them at full capacity.",
+    "unconfiguredAction": "Configure",
     "categories": {
       "filesystem": "Filesystem",
       "runtime": "Runtime",

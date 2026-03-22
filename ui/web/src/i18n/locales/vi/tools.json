@@ -85,6 +85,8 @@
     "tenantDisabled": "Tắt cho tenant này",
     "tenantDefault": "Dùng mặc định",
     "resetToDefault": "Đặt lại mặc định",
+    "unconfiguredWarning": "{{count}} công cụ cần cấu hình provider để agent sử dụng đầy đủ năng lực.",
+    "unconfiguredAction": "Cấu hình",
     "categories": {
       "filesystem": "Hệ thống tệp",
       "runtime": "Thời gian chạy",

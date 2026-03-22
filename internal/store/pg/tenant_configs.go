@@ -38,6 +38,27 @@ func (s *PGBuiltinToolTenantConfigStore) ListDisabled(ctx context.Context, tenan
 	return names, rows.Err()
 }
 
+func (s *PGBuiltinToolTenantConfigStore) ListAll(ctx context.Context, tenantID uuid.UUID) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT tool_name, enabled FROM builtin_tool_tenant_configs WHERE tenant_id = $1`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		var enabled bool
+		if err := rows.Scan(&name, &enabled); err != nil {
+			return nil, err
+		}
+		result[name] = enabled
+	}
+	return result, rows.Err()
+}
+
 func (s *PGBuiltinToolTenantConfigStore) Set(ctx context.Context, tenantID uuid.UUID, toolName string, enabled bool) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO builtin_tool_tenant_configs (tool_name, tenant_id, enabled, updated_at)

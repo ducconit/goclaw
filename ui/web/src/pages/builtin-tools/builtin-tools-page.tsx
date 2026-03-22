@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Package, RefreshCw, Settings, Info } from "lucide-react";
+import { Package, RefreshCw, Settings, Info, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -16,6 +16,7 @@ import { SearchInput } from "@/components/shared/search-input";
 import { TableSkeleton } from "@/components/shared/loading-skeleton";
 import { useBuiltinTools, type BuiltinToolData } from "./hooks/use-builtin-tools";
 import { BuiltinToolSettingsDialog } from "./builtin-tool-settings-dialog";
+import { MEDIA_TOOLS } from "./media-provider-params-schema";
 import { useMinLoading } from "@/hooks/use-min-loading";
 import { useDeferredLoading } from "@/hooks/use-deferred-loading";
 import { useTenants } from "@/hooks/use-tenants";
@@ -39,6 +40,15 @@ function isDeprecated(tool: BuiltinToolData): boolean {
   return (tool.metadata as any)?.deprecated === true;
 }
 
+/** Media tool that is enabled but has no provider chain configured */
+function needsProviderConfig(tool: BuiltinToolData): boolean {
+  if (!MEDIA_TOOLS.has(tool.name) || !tool.enabled) return false;
+  const settings = tool.settings;
+  if (!settings) return true;
+  const providers = settings.providers as unknown[] | undefined;
+  return !providers || providers.length === 0;
+}
+
 export function BuiltinToolsPage() {
   const { t } = useTranslation("tools");
   const { tools, loading, refresh, updateTool, setTenantConfig, deleteTenantConfig } = useBuiltinTools();
@@ -47,6 +57,12 @@ export function BuiltinToolsPage() {
   const showSkeleton = useDeferredLoading(loading && tools.length === 0);
   const [search, setSearch] = useState("");
   const [settingsTool, setSettingsTool] = useState<BuiltinToolData | null>(null);
+
+  // Media tools enabled but missing provider configuration
+  const unconfigured = useMemo(
+    () => tools.filter(needsProviderConfig),
+    [tools],
+  );
 
   const filtered = tools.filter(
     (t) =>
@@ -106,6 +122,31 @@ export function BuiltinToolsPage() {
           {sortedCategories.length > 0 && ` · ${t("builtin.categoryCount", { count: sortedCategories.length })}`}
         </span>
       </div>
+
+      {unconfigured.length > 0 && (
+        <div className="mt-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/30">
+          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              {t("builtin.unconfiguredWarning", { count: unconfigured.length })}
+            </p>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {unconfigured.map((tool) => (
+                <Button
+                  key={tool.name}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSettingsTool(tool)}
+                  className="h-6 gap-1 px-2 text-xs border-amber-300 dark:border-amber-800"
+                >
+                  <Settings className="h-3 w-3" />
+                  {tool.display_name}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 space-y-3">
         {showSkeleton ? (
@@ -280,19 +321,20 @@ function ToolRow({
             </Tooltip>
           </TooltipProvider>
         )}
-        {hasTenantScope && !deprecated && (
+        {hasTenantScope && !deprecated ? (
           <TenantOverrideControl
             tool={tool}
             hasOverride={hasOverride}
             onSetTenantConfig={onSetTenantConfig}
             onDeleteTenantConfig={onDeleteTenantConfig}
           />
+        ) : (
+          <Switch
+            checked={tool.enabled}
+            onCheckedChange={() => onToggle(tool)}
+            disabled={deprecated}
+          />
         )}
-        <Switch
-          checked={tool.enabled}
-          onCheckedChange={() => onToggle(tool)}
-          disabled={deprecated}
-        />
       </div>
     </div>
   );

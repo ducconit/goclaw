@@ -58,6 +58,28 @@ func (h *BuiltinToolsHandler) handleList(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgFailedToList, "tools")})
 		return
 	}
+
+	// Merge per-tenant overrides into response when tenant-scoped
+	tid := store.TenantIDFromContext(r.Context())
+	if tid != uuid.Nil && h.tenantCfgStore != nil {
+		overrides, err := h.tenantCfgStore.ListAll(r.Context(), tid)
+		if err == nil && len(overrides) > 0 {
+			type toolWithTenant struct {
+				store.BuiltinToolDef
+				TenantEnabled *bool `json:"tenant_enabled"`
+			}
+			enriched := make([]toolWithTenant, len(result))
+			for i, t := range result {
+				enriched[i] = toolWithTenant{BuiltinToolDef: t}
+				if enabled, ok := overrides[t.Name]; ok {
+					enriched[i].TenantEnabled = &enabled
+				}
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"tools": enriched})
+			return
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"tools": result})
 }
 
