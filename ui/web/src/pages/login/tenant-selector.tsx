@@ -16,9 +16,9 @@ export function TenantSelectorPage() {
 
   const handleSelect = (slug: string) => {
     if (slug === "__all__") {
-      localStorage.removeItem("goclaw:tenant_scope");
+      localStorage.removeItem("goclaw:tenant_id");
     } else {
-      localStorage.setItem("goclaw:tenant_scope", slug);
+      localStorage.setItem("goclaw:tenant_id", slug);
     }
     useAuthStore.getState().setTenantSelected(true);
     // Reload to reconnect WS with the new tenant_scope

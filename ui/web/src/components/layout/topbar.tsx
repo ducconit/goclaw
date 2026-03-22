@@ -125,7 +125,7 @@ function UserMenu() {
     // Cross-tenant admin: narrow scope to specific tenant
     // Non-cross-tenant: use tenant_hint for pairing
     if (isCrossTenant) {
-      localStorage.setItem("goclaw:tenant_scope", slug);
+      localStorage.setItem("goclaw:tenant_id", slug);
     } else {
       localStorage.setItem("goclaw:tenant_hint", slug);
     }
@@ -170,7 +170,7 @@ function UserMenu() {
               {isCrossTenant && (
                 <button
                   onClick={() => {
-                    localStorage.removeItem("goclaw:tenant_scope");
+                    localStorage.removeItem("goclaw:tenant_id");
                     window.location.reload();
                   }}
                   className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent"

@@ -40,7 +40,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   tenantSlug: "",
   isCrossTenant: false,
   availableTenants: [],
-  tenantSelected: !!localStorage.getItem("goclaw:tenant_scope"),
+  tenantSelected: !!localStorage.getItem("goclaw:tenant_id"),
 
   setCredentials: (token, userId) => {
     localStorage.setItem(LOCAL_STORAGE_KEYS.TOKEN, token);

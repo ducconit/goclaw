@@ -148,6 +148,7 @@ func (m *TenantsMethods) handleCreate(ctx context.Context, client *gateway.Clien
 	}
 
 	m.emitCacheInvalidate(bus.CacheKindTenantUsers, tenant.ID.String())
+	m.emitCacheInvalidate(bus.CacheKindTenants, "")
 	client.SendResponse(protocol.NewOKResponse(req.ID, tenant))
 }
 
@@ -200,6 +201,7 @@ func (m *TenantsMethods) handleUpdate(ctx context.Context, client *gateway.Clien
 	}
 
 	m.emitCacheInvalidate(bus.CacheKindTenantUsers, id.String())
+	m.emitCacheInvalidate(bus.CacheKindTenants, "")
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]string{"ok": "true"}))
 }
 

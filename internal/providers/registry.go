@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,19 +17,33 @@ var MasterTenantID = uuid.Must(uuid.Parse("0193a5b0-7000-7000-8000-000000000001"
 // Registry manages available LLM providers with per-tenant isolation.
 // Providers are keyed by "tenantID/name". Get falls back to master tenant.
 type Registry struct {
-	providers map[string]Provider
-	mu        sync.RWMutex
+	providers     map[string]Provider
+	mu            sync.RWMutex
+	tenantFromCtx func(context.Context) uuid.UUID // injected to avoid circular import with store
 }
 
-func NewRegistry() *Registry {
+// NewRegistry creates a provider registry.
+// tenantFromCtx extracts tenant UUID from context (pass store.TenantIDFromContext).
+func NewRegistry(tenantFromCtx func(context.Context) uuid.UUID) *Registry {
 	return &Registry{
-		providers: make(map[string]Provider),
+		providers:     make(map[string]Provider),
+		tenantFromCtx: tenantFromCtx,
 	}
 }
 
 // compoundKey returns "tenantID/name" for registry lookup.
 func compoundKey(tenantID uuid.UUID, name string) string {
 	return tenantID.String() + "/" + name
+}
+
+// tenantFromContext resolves the tenant UUID from context, defaulting to MasterTenantID.
+func (r *Registry) tenantFromContext(ctx context.Context) uuid.UUID {
+	if r.tenantFromCtx != nil {
+		if t := r.tenantFromCtx(ctx); t != uuid.Nil {
+			return t
+		}
+	}
+	return MasterTenantID
 }
 
 // Register adds a provider to the registry under the master tenant.
@@ -68,9 +83,9 @@ func (r *Registry) UnregisterForTenant(tenantID uuid.UUID, name string) {
 	}
 }
 
-// Get returns a provider by name for a tenant, falling back to master tenant.
-func (r *Registry) Get(name string) (Provider, error) {
-	return r.GetForTenant(MasterTenantID, name)
+// Get returns a provider by name, using tenant from context (falls back to master).
+func (r *Registry) Get(ctx context.Context, name string) (Provider, error) {
+	return r.GetForTenant(r.tenantFromContext(ctx), name)
 }
 
 // GetForTenant returns a provider by name for a specific tenant.
@@ -105,9 +120,9 @@ func (r *Registry) Close() {
 	}
 }
 
-// List returns all registered provider names (master tenant only, for backward compat).
-func (r *Registry) List() []string {
-	return r.ListForTenant(MasterTenantID)
+// List returns provider names visible to the tenant in context (tenant-specific + master defaults).
+func (r *Registry) List(ctx context.Context) []string {
+	return r.ListForTenant(r.tenantFromContext(ctx))
 }
 
 // ListForTenant returns provider names available to a tenant (tenant-specific + master defaults).

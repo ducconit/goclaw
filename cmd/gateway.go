@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/google/uuid"
@@ -45,6 +46,21 @@ func runGateway() {
 	if verbose {
 		logLevel = slog.LevelDebug
 	}
+	// Env override (docker/K8s friendly, default: info): GOCLAW_LOG_LEVEL=debug|info|warn|error
+	if lvl := os.Getenv("GOCLAW_LOG_LEVEL"); lvl != "" {
+		switch strings.ToLower(lvl) {
+		case "debug":
+			logLevel = slog.LevelDebug
+		case "info":
+			logLevel = slog.LevelInfo
+		case "warn":
+			logLevel = slog.LevelWarn
+		case "error":
+			logLevel = slog.LevelError
+		default:
+			fmt.Fprintf(os.Stderr, "warning: unknown GOCLAW_LOG_LEVEL=%q, using info\n", lvl)
+		}
+	}
 	textHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: logLevel,
 	})
@@ -64,7 +80,7 @@ func runGateway() {
 	msgBus := bus.New()
 
 	// Create provider registry
-	providerRegistry := providers.NewRegistry()
+	providerRegistry := providers.NewRegistry(store.TenantIDFromContext)
 	registerProviders(providerRegistry, cfg)
 
 	// Resolve workspace (must be absolute for system prompt + file tool path resolution)
@@ -170,7 +186,7 @@ func runGateway() {
 		slog.Info("subagent system enabled", "tools", []string{"spawn"})
 	}
 
-	skillsLoader, skillSearchTool, globalSkillsDir := setupSkillsSystem(cfg, workspace, dataDir, pgStores, toolsReg, providerRegistry, msgBus)
+	skillsLoader, skillSearchTool, globalSkillsDir, bundledSkillsDir := setupSkillsSystem(cfg, workspace, dataDir, pgStores, toolsReg, providerRegistry, msgBus)
 	_ = skillSearchTool // used via wireExtras → skillsLoader; kept for type clarity
 
 	// DateTime tool (precise time for cron scheduling, memory timestamps, etc.)
@@ -294,7 +310,7 @@ func runGateway() {
 	if mcpMgr != nil {
 		mcpToolLister = mcpMgr
 	}
-	agentsH, skillsH, tracesH, mcpH, channelInstancesH, providersH, builtinToolsH, pendingMessagesH, teamEventsH, secureCLIH, mcpUserCredsH := wireHTTP(pgStores, cfg.Gateway.Token, cfg.Agents.Defaults.Workspace, msgBus, toolsReg, providerRegistry, permPE.IsOwner, gatewayAddr, mcpToolLister)
+	agentsH, skillsH, tracesH, mcpH, channelInstancesH, providersH, builtinToolsH, pendingMessagesH, teamEventsH, secureCLIH, mcpUserCredsH := wireHTTP(pgStores, cfg.Gateway.Token, cfg.Agents.Defaults.Workspace, bundledSkillsDir, msgBus, toolsReg, providerRegistry, permPE.IsOwner, gatewayAddr, mcpToolLister)
 	if providersH != nil {
 		providersH.SetAPIBaseFallback(cfg.Providers.APIBaseForType)
 	}
@@ -867,7 +883,15 @@ func runGateway() {
 		methods.NewTenantsMethods(pgStores.Tenants, msgBus, workspace).Register(server.Router())
 		server.SetTenantsHandler(httpapi.NewTenantsHandler(pgStores.Tenants, cfg.Gateway.Token, msgBus, workspace))
 		server.Router().SetTenantStore(pgStores.Tenants)
-		httpapi.InitTenantStore(pgStores.Tenants)
+		// Permission cache for tenant membership checks (tenant role, agent access, etc.)
+		permCache := cache.NewPermissionCache()
+		msgBus.Subscribe("permission-cache", func(e bus.Event) {
+			if p, ok := e.Payload.(bus.CacheInvalidatePayload); ok {
+				permCache.HandleInvalidation(p)
+			}
+		})
+		server.Router().SetPermissionCache(permCache)
+		httpapi.InitTenantStore(pgStores.Tenants, msgBus)
 	}
 
 	// Reload quota config on config changes via pub/sub.

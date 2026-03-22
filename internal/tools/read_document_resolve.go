@@ -75,7 +75,7 @@ func (t *ReadDocumentTool) callProvider(ctx context.Context, cp credentialProvid
 	}
 
 	// Other providers: use standard Chat API with document as base64 image_url.
-	p, err := t.registry.Get(providerName)
+	p, err := t.registry.Get(ctx, providerName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("provider %q not available: %w", providerName, err)
 	}

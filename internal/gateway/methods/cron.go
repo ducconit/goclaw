@@ -253,9 +253,10 @@ func (m *CronMethods) handleRun(ctx context.Context, client *gateway.Client, req
 	}))
 	emitAudit(m.eventBus, client, "cron.run", "cron", jobID)
 
-	// Use background context for async execution — tenant already verified above.
+	// Preserve tenant scope for async execution.
+	tenantID := store.TenantIDFromContext(ctx)
 	go func() {
-		bgCtx := store.WithCrossTenant(context.Background())
+		bgCtx := store.WithTenantID(context.Background(), tenantID)
 		if _, _, err := m.service.RunJob(bgCtx, jobID, force); err != nil {
 			slog.Warn("cron.run background error", "jobId", jobID, "error", err)
 		}

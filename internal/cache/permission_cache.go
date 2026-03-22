@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -88,6 +89,7 @@ func (pc *PermissionCache) SetTeamAccess(ctx context.Context, teamID uuid.UUID, 
 
 // HandleInvalidation processes a cache invalidation event from the bus.
 func (pc *PermissionCache) HandleInvalidation(p bus.CacheInvalidatePayload) {
+	slog.Debug("perm_cache.invalidated", "kind", string(p.Kind), "key", p.Key)
 	ctx := context.Background()
 	switch p.Kind {
 	case bus.CacheKindTenantUsers:

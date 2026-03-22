@@ -41,14 +41,14 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
               store.setAvailableTenants(tenants);
 
               // Auto-select tenant if applicable
-              const savedScope = localStorage.getItem("goclaw:tenant_scope");
+              const savedScope = localStorage.getItem("goclaw:tenant_id");
               if (savedScope && tenants.some((t) => t.slug === savedScope)) {
                 // Already scoped via localStorage — auto-select
                 store.setTenantSelected(true);
               } else if (!client.crossTenant && tenants.length === 1) {
                 // Non-admin with single tenant — auto-select
                 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                localStorage.setItem("goclaw:tenant_scope", tenants[0]!.slug);
+                localStorage.setItem("goclaw:tenant_id", tenants[0]!.slug);
                 store.setTenantSelected(true);
               } else if (!client.crossTenant && tenants.length === 0) {
                 // No tenants — leave tenantSelected=false (blocked)

@@ -167,7 +167,7 @@ func (sm *SubagentManager) executeTask(ctx context.Context, task *SubagentTask) 
 	activeProvider := sm.provider
 	if sm.providerReg != nil {
 		if parentProviderName := ParentProviderFromCtx(ctx); parentProviderName != "" {
-			if p, err := sm.providerReg.Get(parentProviderName); err == nil {
+			if p, err := sm.providerReg.Get(ctx, parentProviderName); err == nil {
 				activeProvider = p
 			}
 		}

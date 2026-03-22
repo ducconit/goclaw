@@ -178,7 +178,7 @@ func (h *AgentsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Start LLM summoning in background if applicable
 	if req.Status == store.AgentStatusSummoning {
-		go h.summoner.SummonAgent(req.ID, req.Provider, req.Model, description)
+		go h.summoner.SummonAgent(req.ID, req.TenantID, req.Provider, req.Model, description)
 	}
 
 	emitAudit(h.msgBus, r, "agent.created", "agent", req.ID.String())
@@ -267,14 +267,13 @@ func (h *AgentsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	// Cascade: if status changed, broadcast so channel instances and cron jobs react.
 	if newStatus, ok := allowed["status"].(string); ok && newStatus != ag.Status {
 		if h.msgBus != nil {
-			h.msgBus.Broadcast(bus.Event{
-				Name: bus.EventAgentStatusChanged,
-				Payload: bus.AgentStatusChangedPayload{
+			bus.BroadcastForTenant(h.msgBus, bus.EventAgentStatusChanged,
+				store.TenantIDFromContext(r.Context()),
+				bus.AgentStatusChangedPayload{
 					AgentID:   id.String(),
 					OldStatus: ag.Status,
 					NewStatus: newStatus,
-				},
-			})
+				})
 		}
 	}
 

@@ -99,7 +99,7 @@ func (t *ReadAudioTool) callProvider(ctx context.Context, cp credentialProvider,
 	}
 
 	// Other providers: try standard Chat API with base64 audio as image_url (best effort).
-	p, err := t.registry.Get(providerName)
+	p, err := t.registry.Get(ctx, providerName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("provider %q not available: %w", providerName, err)
 	}

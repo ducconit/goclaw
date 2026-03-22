@@ -248,8 +248,9 @@ func (l *InstanceLoader) loadInstance(ctx context.Context, inst store.ChannelIns
 		var model string
 
 		// Try config-level provider/model first.
+		tctx := store.WithTenantID(ctx, inst.TenantID)
 		if l.pendingCompactCfg != nil && l.pendingCompactCfg.Provider != "" {
-			if cp, err := l.providerReg.Get(l.pendingCompactCfg.Provider); err == nil {
+			if cp, err := l.providerReg.Get(tctx, l.pendingCompactCfg.Provider); err == nil {
 				p = cp
 				model = l.pendingCompactCfg.Model
 				if model == "" {
@@ -259,7 +260,7 @@ func (l *InstanceLoader) loadInstance(ctx context.Context, inst store.ChannelIns
 		}
 		// Fallback: agent's provider/model.
 		if p == nil && ag != nil && ag.Provider != "" {
-			if ap, err := l.providerReg.Get(ag.Provider); err == nil {
+			if ap, err := l.providerReg.Get(tctx, ag.Provider); err == nil {
 				p = ap
 				model = ag.Model
 				if model == "" {

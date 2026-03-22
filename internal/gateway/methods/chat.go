@@ -236,10 +236,9 @@ func (m *ChatMethods) handleSend(ctx context.Context, client *gateway.Client, re
 					slog.Warn("failed to save session title", "sessionKey", sessionKey, "error", err)
 					return
 				}
-				m.eventBus.Broadcast(bus.Event{
-					Name:    protocol.EventSessionUpdated,
-					Payload: map[string]string{"sessionKey": sessionKey, "label": title, "userId": userID},
-				})
+				bus.BroadcastForTenant(m.eventBus, protocol.EventSessionUpdated,
+					client.TenantID(),
+					map[string]string{"sessionKey": sessionKey, "label": title, "userId": userID})
 			}()
 		}
 

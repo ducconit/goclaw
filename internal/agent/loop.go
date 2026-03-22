@@ -884,7 +884,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			if sanitized != "" && !IsSilentReply(sanitized) {
 				blockReplies++
 				lastBlockReply = sanitized
-				l.emit(AgentEvent{
+				emitRun(AgentEvent{
 					Type:    protocol.AgentEventBlockReply,
 					AgentID: l.id,
 					RunID:   req.RunID,
