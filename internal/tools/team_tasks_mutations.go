@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -421,6 +422,14 @@ func (t *TeamTasksTool) executeAttach(ctx context.Context, args map[string]any) 
 	if filePath == "" {
 		return ErrorResult("path is required for attach action")
 	}
+
+	// Resolve to absolute path within team workspace.
+	if !filepath.IsAbs(filePath) {
+		if ws := ToolTeamWorkspaceFromCtx(ctx); ws != "" {
+			filePath = filepath.Join(ws, filePath)
+		}
+	}
+	filePath = filepath.Clean(filePath)
 
 	// Verify task belongs to team.
 	task, err := t.manager.teamStore.GetTask(ctx, taskID)

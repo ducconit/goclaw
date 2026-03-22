@@ -228,17 +228,17 @@ func AutoAttachWorkspaceFile(ctx context.Context, teamStore store.TeamStore, wor
 		TaskID:   taskID,
 		TeamID:   teamID,
 		ChatID:   chatID,
-		Path:     absPath,
+		Path:     cleanPath,
 		FileSize: fileSize,
-		MimeType: mimeFromExt(filepath.Ext(absPath)),
+		MimeType: mimeFromExt(filepath.Ext(cleanPath)),
 	}
 	if agentID != uuid.Nil {
 		att.CreatedByAgentID = &agentID
 	}
 	if err := teamStore.AttachFileToTask(ctx, att); err != nil {
-		slog.Warn("workspace: auto-attach media failed", "task_id", taskIDStr, "path", absPath, "error", err)
+		slog.Warn("workspace: auto-attach media failed", "task_id", taskIDStr, "path", cleanPath, "error", err)
 	} else {
-		slog.Debug("workspace: auto-attached media to task", "task_id", taskIDStr, "path", absPath)
+		slog.Debug("workspace: auto-attached media to task", "task_id", taskIDStr, "path", cleanPath)
 	}
 }
 
