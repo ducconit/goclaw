@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"time"
 
@@ -48,6 +49,41 @@ func (s *PGAgentStore) SetAgentContextFile(ctx context.Context, agentID uuid.UUI
 		store.GenNewID(), agentID, fileName, content, time.Now(), tenantIDForInsert(ctx),
 	)
 	return err
+}
+
+// PropagateContextFile copies an agent-level context file to ALL existing user instances.
+// Only updates users who already have that file (seeded users). Returns count of updated rows.
+func (s *PGAgentStore) PropagateContextFile(ctx context.Context, agentID uuid.UUID, fileName string) (int, error) {
+	// Get the agent-level content
+	tClauseSelect, tArgsSelect, err := tenantClauseN(ctx, 3)
+	if err != nil {
+		return 0, err
+	}
+
+	var content string
+	err = s.db.QueryRowContext(ctx,
+		"SELECT content FROM agent_context_files WHERE agent_id = $1 AND file_name = $2"+tClauseSelect,
+		append([]any{agentID, fileName}, tArgsSelect...)...,
+	).Scan(&content)
+	if err != nil {
+		return 0, fmt.Errorf("agent file %s not found: %w", fileName, err)
+	}
+
+	// Update all existing user copies of this file
+	tClauseUpdate, tArgsUpdate, err := tenantClauseN(ctx, 5)
+	if err != nil {
+		return 0, err
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE user_context_files SET content = $1, updated_at = $2
+		 WHERE agent_id = $3 AND file_name = $4`+tClauseUpdate,
+		append([]any{content, time.Now(), agentID, fileName}, tArgsUpdate...)...,
+	)
+	if err != nil {
+		return 0, err
+	}
+	affected, _ := res.RowsAffected()
+	return int(affected), nil
 }
 
 // --- Per-user Context Files ---

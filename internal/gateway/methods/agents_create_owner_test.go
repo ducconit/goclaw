@@ -95,6 +95,9 @@ func (s *createCaptureStore) UpdateUserProfileMetadata(_ context.Context, _ uuid
 func (s *createCaptureStore) EnsureUserProfile(_ context.Context, _ uuid.UUID, _ string) error {
 	return nil
 }
+func (s *createCaptureStore) PropagateContextFile(_ context.Context, _ uuid.UUID, _ string) (int, error) {
+	return 0, nil
+}
 func (s *createCaptureStore) CreateVersion(_ context.Context, _ uuid.UUID, _, _ string) error {
 	return nil
 }
