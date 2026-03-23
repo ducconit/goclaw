@@ -401,10 +401,16 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 
 // InvalidateAgent removes an agent from the router cache, forcing re-resolution.
 // Used when agent config is updated via API.
+// Matches both bare "agentKey" and tenant-scoped "tenantID:agentKey" cache keys.
 func (r *Router) InvalidateAgent(agentKey string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.agents, agentKey)
+	suffix := ":" + agentKey
+	for key := range r.agents {
+		if key == agentKey || len(key) > len(suffix) && key[len(key)-len(suffix):] == suffix {
+			delete(r.agents, key)
+		}
+	}
 	slog.Debug("invalidated agent cache", "agent", agentKey)
 }
 

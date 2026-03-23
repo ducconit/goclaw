@@ -96,6 +96,8 @@ CRUD operations for agent management. Requires `X-GoClaw-User-Id` header for mul
 | `PUT` | `/v1/agents/{id}` | Update agent (owner only) | Bearer |
 | `DELETE` | `/v1/agents/{id}` | Delete agent (owner only) | Bearer |
 
+**Create defaults:** If `provider` or `model` is omitted in `POST /v1/agents`, they inherit from gateway config defaults (`agents.defaults.provider` / `agents.defaults.model`). Updates via `PUT` take effect immediately — no gateway restart required.
+
 ### Shares
 
 | Method | Path | Description |

@@ -134,6 +134,34 @@ func (h *ChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Inject tenant + user context so downstream stores and agent resolver
+	// can scope queries correctly (mirrors requireAuth middleware behavior).
+	ctx := store.WithLocale(r.Context(), locale)
+	if userID != "" {
+		ctx = store.WithUserID(ctx, userID)
+	}
+	if auth.KeyData != nil && auth.KeyData.OwnerID != "" {
+		if userID != "" && userID != auth.KeyData.OwnerID {
+			slog.Warn("security.api_key_owner_override",
+				"header_user_id", userID,
+				"owner_id", auth.KeyData.OwnerID,
+			)
+		}
+		userID = auth.KeyData.OwnerID
+		ctx = store.WithUserID(ctx, userID)
+	}
+	switch {
+	case auth.CrossTenant && auth.TenantID != uuid.Nil:
+		ctx = store.WithTenantID(ctx, auth.TenantID)
+	case auth.CrossTenant:
+		ctx = store.WithTenantID(ctx, store.MasterTenantID)
+	case auth.TenantID != uuid.Nil:
+		ctx = store.WithTenantID(ctx, auth.TenantID)
+	default:
+		ctx = store.WithTenantID(ctx, store.MasterTenantID)
+	}
+	r = r.WithContext(ctx)
+
 	loop, err := h.agents.Get(r.Context(), agentID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":{"message":"%s"}}`, i18n.T(locale, i18n.MsgNotFound, "agent", agentID)), http.StatusNotFound)
@@ -153,12 +181,6 @@ func (h *ChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Inject user_id and locale into context for downstream stores/tools
-	ctx := store.WithLocale(r.Context(), extractLocale(r))
-	if userID != "" {
-		ctx = store.WithUserID(ctx, userID)
-	}
-
 	runID := uuid.NewString()
 	// Include userID in session key for multi-tenant isolation
 	sessionSuffix := "http-" + runID[:8]
@@ -170,9 +192,9 @@ func (h *ChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	slog.Info("chat completions request", "agent", agentID, "stream", req.Stream, "user", userID)
 
 	if req.Stream {
-		h.handleStream(w, r.WithContext(ctx), loop, runID, sessionKey, lastMessage, req.Model, userID)
+		h.handleStream(w, r, loop, runID, sessionKey, lastMessage, req.Model, userID)
 	} else {
-		h.handleNonStream(w, r.WithContext(ctx), loop, runID, sessionKey, lastMessage, req.Model, userID)
+		h.handleNonStream(w, r, loop, runID, sessionKey, lastMessage, req.Model, userID)
 	}
 }
 

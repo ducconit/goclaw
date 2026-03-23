@@ -21,6 +21,8 @@ import (
 type AgentsHandler struct {
 	agents           store.AgentStore
 	defaultWorkspace string            // default workspace path template (e.g. "~/.goclaw/workspace")
+	defaultProvider  string            // fallback provider for new agents (from config defaults)
+	defaultModel     string            // fallback model for new agents (from config defaults)
 	msgBus           *bus.MessageBus   // for cache invalidation events (nil = no events)
 	summoner         *AgentSummoner    // LLM-based agent setup (nil = disabled)
 	isOwner          func(string) bool // checks if user ID is a system owner (nil = no owners configured)
@@ -28,8 +30,8 @@ type AgentsHandler struct {
 
 // NewAgentsHandler creates a handler for agent management endpoints.
 // isOwner is a function that checks if a user ID is in GOCLAW_OWNER_IDS (nil = disabled).
-func NewAgentsHandler(agents store.AgentStore, defaultWorkspace string, msgBus *bus.MessageBus, summoner *AgentSummoner, isOwner func(string) bool) *AgentsHandler {
-	return &AgentsHandler{agents: agents, defaultWorkspace: defaultWorkspace, msgBus: msgBus, summoner: summoner, isOwner: isOwner}
+func NewAgentsHandler(agents store.AgentStore, defaultWorkspace, defaultProvider, defaultModel string, msgBus *bus.MessageBus, summoner *AgentSummoner, isOwner func(string) bool) *AgentsHandler {
+	return &AgentsHandler{agents: agents, defaultWorkspace: defaultWorkspace, defaultProvider: defaultProvider, defaultModel: defaultModel, msgBus: msgBus, summoner: summoner, isOwner: isOwner}
 }
 
 // isOwnerUser checks if the given user ID is a system owner.
@@ -128,6 +130,14 @@ func (h *AgentsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		req.TenantID = store.TenantIDFromContext(r.Context())
+	}
+
+	// Fall back to config defaults for provider/model (matches WS agents.create behavior).
+	if req.Provider == "" {
+		req.Provider = h.defaultProvider
+	}
+	if req.Model == "" {
+		req.Model = h.defaultModel
 	}
 
 	if req.AgentType == "" {
