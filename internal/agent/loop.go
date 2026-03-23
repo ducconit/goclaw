@@ -1329,6 +1329,16 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			pendingMsgs = append(pendingMsgs, forSession...)
 		}
 
+		// Periodic checkpoint: flush pending messages to session after each tool
+		// iteration to prevent data loss on container crash (#294).
+		if len(pendingMsgs) > 0 {
+			for _, msg := range pendingMsgs {
+				l.sessions.AddMessage(ctx, req.SessionKey, msg)
+			}
+			l.sessions.Save(ctx, req.SessionKey)
+			pendingMsgs = pendingMsgs[:0] // reset buffer, already persisted
+		}
+
 	}
 
 	// 4. Full sanitization pipeline (matching TS extractAssistantText + sanitizeUserFacingText)
