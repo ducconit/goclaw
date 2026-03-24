@@ -36,7 +36,17 @@ func (s *PGSessionStore) Reset(ctx context.Context, key string) {
 		data.Messages = []providers.Message{}
 		data.Summary = ""
 		data.Updated = time.Now()
+		return
 	}
+
+	// Session not in cache (e.g. after server restart). Clear directly in DB
+	// so the next GetOrCreate loads a clean session instead of stale history.
+	tid := tenantIDForInsert(ctx)
+	s.db.ExecContext(ctx,
+		`UPDATE sessions SET messages = '[]', summary = '', updated_at = $1
+		 WHERE session_key = $2 AND tenant_id = $3`,
+		time.Now(), key, tid,
+	)
 }
 
 func (s *PGSessionStore) Delete(ctx context.Context, key string) error {
