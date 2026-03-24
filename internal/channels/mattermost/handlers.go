@@ -68,7 +68,7 @@ func (c *Channel) handlePostEdited(evt *MMWebSocketEvent) {
 	}
 
 	// Only process if the edit introduces a new @bot mention
-	if !c.isBotMentioned(post.Message) {
+	if !c.isBotMentioned(&post) {
 		return
 	}
 
@@ -142,7 +142,7 @@ func (c *Channel) processPost(ctx context.Context, post *MMPost) {
 
 	// Mention gating in groups (with thread participation cache)
 	if !isDM && c.requireMention {
-		mentioned := c.isBotMentioned(content)
+		mentioned := c.isBotMentioned(post)
 
 		// Thread participation cache: auto-reply in threads where bot previously participated
 		if !mentioned && rootID != "" && c.threadTTL > 0 {

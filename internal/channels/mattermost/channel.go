@@ -410,9 +410,19 @@ func (c *Channel) resolveDisplayName(userID string) string {
 	return displayName
 }
 
-// isBotMentioned checks if the message text contains @botUsername.
-func (c *Channel) isBotMentioned(text string) bool {
-	return strings.Contains(strings.ToLower(text), "@"+strings.ToLower(c.botUsername))
+// isBotMentioned checks if the post formally mentions the bot via props, or if the message text contains @botUsername.
+func (c *Channel) isBotMentioned(post *MMPost) bool {
+	// 1. Check strict mention array (Mattermost auto-complete sends user IDs here)
+	if mentions, ok := post.Props["mentions"].([]interface{}); ok {
+		for _, m := range mentions {
+			if id, ok := m.(string); ok && id == c.botUserID {
+				return true
+			}
+		}
+	}
+
+	// 2. Fallback: text scan for @botUsername
+	return strings.Contains(strings.ToLower(post.Message), "@"+strings.ToLower(c.botUsername))
 }
 
 // stripBotMention removes @botUsername from text.
